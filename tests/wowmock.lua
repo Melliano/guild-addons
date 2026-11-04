@@ -152,7 +152,28 @@ function Mock.newClient(opts)
     env.GetInventoryItemQuality = function(_, slot) return c.inventory[slot] and 2 end
     env.GetItemInfo = function() return nil end
     env.GetNumSkillLines = function() return 0 end
-    env.CombatLogGetCurrentEventInfo = function() return unpack(c.cleu or {}) end
+    env.CombatLogGetCurrentEventInfo = function() c.touchedCombatLog = true end
+    env.COMBATLOG_XPGAIN_FIRSTPERSON = "%s dies, you gain %d experience."
+    -- c.target = { name = "Rabbit", hostile = true, attackingMe = true, critter = true, dead = false }
+    env.UnitExists = function(u) return (u == "target" and c.target ~= nil) or u == "player" end
+    env.UnitName = function(u)
+        if u == "player" then return c.name end
+        if u == "target" and c.target then return c.target.name end
+    end
+    env.UnitCanAttack = function(_, u) return u == "target" and c.target and c.target.hostile or false end
+    env.UnitIsUnit = function(a, b)
+        if a == "targettarget" and b == "player" then return c.target and c.target.attackingMe or false end
+        return a == b
+    end
+    env.UnitIsDead = function(u) return u == "target" and c.target and c.target.dead or false end
+    env.UnitCreatureType = function(u) return u == "target" and c.target and c.target.critter and "Critter" or "Beast" end
+    env.UnitAffectingCombat = function() return c.inCombat or false end
+    env.IsFalling = function() return c.falling or false end
+    env.C_NamePlate = { GetNamePlates = function() return {} end }
+    env.ChatFrame1 = { registered = true }
+    function env.ChatFrame1:IsEventRegistered() return self.registered end
+    function env.ChatFrame1:UnregisterEvent() self.registered = false end
+    function env.ChatFrame1:RegisterEvent() self.registered = true end
     env.RequestTimePlayed = function() end
 
     env.C_Map = {
@@ -184,6 +205,9 @@ function Mock.newClient(opts)
             self.onEvent(nil, event, ...)
         end
     end
+
+    env.ChatFrame_DisplayTimePlayed = function() end
+    c.originalGlobals = { ChatFrame_DisplayTimePlayed = env.ChatFrame_DisplayTimePlayed }
 
     function c:load(files)
         local ns = {}
