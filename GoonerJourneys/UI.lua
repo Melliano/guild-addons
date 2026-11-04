@@ -602,7 +602,7 @@ local function createGear()
         b:SetScript("OnLeave", GameTooltip_Hide)
         b:SetScript("OnClick", function(btn)
             if btn.item and IsModifiedClick("CHATLINK") then
-                local _, link = GetItemInfo(btn.item)
+                local _, link = GJ.ItemInfo(btn.item)
                 if link then ChatEdit_InsertLink(link) end
             end
         end)
@@ -617,13 +617,16 @@ function GJ:RefreshGear()
         local item = gear[b.slot]
         b.item = item
         if item then
-            local name, _, quality, _, _, _, _, _, _, tex = GetItemInfo(item)
-            local id = tonumber(item:match("item:(%d+)"))
-            b.icon:SetTexture(tex or (id and GetItemIcon and GetItemIcon(id)) or "Interface\\Icons\\INV_Misc_QuestionMark")
+            local name, _, quality, _, _, _, _, _, _, tex = GJ.ItemInfo(item)
+            b.icon:SetTexture(tex or GJ.ItemIcon(item) or "Interface\\Icons\\INV_Misc_QuestionMark")
             b.icon:SetDesaturated(false)
             b.icon:SetAlpha(1)
             local r, g, bl = 0.8, 0.8, 0.8
-            if quality and GetItemQualityColor then r, g, bl = GetItemQualityColor(quality) end
+            if quality then r, g, bl = GJ.ItemQualityColor(quality) end
+            if not name and C_Item and C_Item.RequestLoadItemDataByID then
+                local id = tonumber(item:match("item:(%d+)"))
+                if id then pcall(C_Item.RequestLoadItemDataByID, id) end
+            end
             b.itemName:SetText(name or "Loading...")
             b.itemName:SetTextColor(r, g, bl)
             b.iconBorder:SetVertexColor(r, g, bl, 1)

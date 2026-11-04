@@ -22,8 +22,9 @@ local function snapshot()
                 -- Trim trailing empty fields to save bandwidth.
                 gear[slot] = itemString:gsub(":+$", "")
             end
-            if slot ~= 4 and slot ~= 19 and GetDetailedItemLevelInfo then
-                local ilvl = GetDetailedItemLevelInfo(link)
+            if slot ~= 4 and slot ~= 19 then
+                local ok, ilvl = pcall(GJ.ItemLevel, link)
+                if not ok then ilvl = nil end
                 if ilvl then total, count = total + ilvl, count + 1 end
             end
         end

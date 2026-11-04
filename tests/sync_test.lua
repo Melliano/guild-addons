@@ -143,6 +143,9 @@ local ok, err = pcall(function()
     B:SelectMember(alice.guid)
     for _, tab in ipairs({ "timeline", "stats", "gear", "map", "leaders" }) do B:ShowTab(tab) end
 end)
+check(rawget(bob.env, "GetItemInfo") == nil and (bob.itemInfoCalls or 0) > 0,
+    "gear tab draws items through C_Item when the old GetItemInfo global is gone")
+check(A:Me().gear.ilvl == 10, "average item level read via C_Item")
 check(ok, "UI tabs render: " .. tostring(err))
 
 print(("\n%d passed, %d failed, %d addon messages sent"):format(passed, failed, Mock.sent))

@@ -117,7 +117,7 @@ GJ.OneOffMilestones = {
 -- How timeline events are shown.
 ---------------------------------------------------------------------------
 local function itemText(id)
-    local name, link = GetItemInfo(id)
+    local name, link = GJ.ItemInfo(id)
     return link or name or ("item " .. tostring(id))
 end
 
@@ -174,7 +174,7 @@ function GJ:EventIcon(ev)
         local m = self:MilestoneInfo(ev.d)
         if m and m[3] then return ICON .. m[3] end
     elseif ev.k == "item" and ev.d then
-        local tex = GetItemIcon and GetItemIcon(ev.d)
+        local tex = GJ.ItemIcon(ev.d)
         if tex then return tex end
     end
     local kind = self.EventKinds[ev.k]
@@ -554,8 +554,7 @@ GJ:On("PLAYER_MONEY", checkMoney)
 local HEARTH_IDS = { [8690] = true }
 GJ:On("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
     if unit ~= "player" then return end
-    local name = (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID))
-        or (GetSpellInfo and GetSpellInfo(spellID))
+    local name = GJ.SpellName(spellID)
     if HEARTH_IDS[spellID] or name == "Hearthstone" then
         GJ:Bump("hearths")
     end
@@ -613,22 +612,42 @@ local PROF_HEADERS = {
 if SECONDARY_SKILLS then PROF_HEADERS[(SECONDARY_SKILLS:gsub(":$", ""))] = true end
 local PROF_STEPS = { 1, 75, 150, 225, 300, 375 }
 
-local function checkProfessions()
-    if not GetNumSkillLines then return end
-    local me = GJ:Me()
-    local header
+-- name -> rank for every profession the player knows.
+local function readProfessions()
     local profs = {}
-    for i = 1, GetNumSkillLines() do
-        local name, isHeader, _, rank, _, _, maxRank = GetSkillLineInfo(i)
-        if isHeader then
-            header = name
-        elseif name and header and PROF_HEADERS[header] then
-            profs[name] = rank
-            for _, step in ipairs(PROF_STEPS) do
-                if rank >= step then
-                    local id = name .. "|" .. step
-                    if not GJ:HasEvent(me, "prof", id) then GJ:AddEvent("prof", id) end
-                end
+    if GetNumSkillLines and GetSkillLineInfo then
+        local header
+        for i = 1, GetNumSkillLines() do
+            local name, isHeader, _, rank = GetSkillLineInfo(i)
+            if isHeader then
+                header = name
+            elseif name and header and PROF_HEADERS[header] and type(rank) == "number" then
+                profs[name] = rank
+            end
+        end
+    elseif GetProfessions and GetProfessionInfo then
+        -- Modern engine API.
+        local list = { GetProfessions() }
+        for i = 1, 6 do
+            local index = list[i]
+            if index then
+                local name, _, rank = GetProfessionInfo(index)
+                if name and type(rank) == "number" then profs[name] = rank end
+            end
+        end
+    end
+    return profs
+end
+
+local function checkProfessions()
+    local me = GJ:Me()
+    local ok, profs = pcall(readProfessions)
+    if not ok or type(profs) ~= "table" then return end
+    for name, rank in pairs(profs) do
+        for _, step in ipairs(PROF_STEPS) do
+            if rank >= step then
+                local id = name .. "|" .. step
+                if not GJ:HasEvent(me, "prof", id) then GJ:AddEvent("prof", id) end
             end
         end
     end

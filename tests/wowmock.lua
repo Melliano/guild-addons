@@ -152,7 +152,17 @@ function Mock.newClient(opts)
         return l and tonumber(l:match("item:(%d+)"))
     end
     env.GetInventoryItemQuality = function(_, slot) return c.inventory[slot] and 2 end
-    env.GetItemInfo = function() return nil end
+    -- Modern engine: no GetItemInfo/GetItemIcon globals, only C_Item.
+    env.GetItemInfo = nil
+    env.C_Item = {
+        GetItemInfo = function(item)
+            c.itemInfoCalls = (c.itemInfoCalls or 0) + 1
+            return "Test Helm", "|cff1eff00|Hitem:1234|h[Test Helm]|h|r", 2, nil, nil, nil, nil, nil, nil, 133071
+        end,
+        GetItemIconByID = function() return 133071 end,
+        GetItemQualityColor = function() return 0.12, 1, 0 end,
+        GetDetailedItemLevelInfo = function() return 10 end,
+    }
     env.GetNumSkillLines = function() return 0 end
     env.CombatLogGetCurrentEventInfo = function() c.touchedCombatLog = true end
     env.COMBATLOG_XPGAIN_FIRSTPERSON = "%s dies, you gain %d experience."
