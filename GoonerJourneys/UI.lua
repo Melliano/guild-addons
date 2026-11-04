@@ -726,7 +726,12 @@ local function createMap()
     ui.legendTrail = legend(S.CIRCLE, C.accent, "Trail")
     legend("Interface\\TargetingFrame\\UI-TargetingFrame-Skull", nil, "Deaths")
     legend("Interface\\Icons\\Spell_Holy_SurgeOfLight", nil, "Milestones")
-    ui.legendHere = legend(S.CIRCLE, C.green, "Here now")
+    local hereOutline = lg:CreateTexture(nil, "OVERLAY", nil, -1)
+    hereOutline:SetTexture(S.CIRCLE)
+    hereOutline:SetVertexColor(0, 0, 0, 1)
+    hereOutline:SetSize(14, 14)
+    ui.legendHere = legend(S.CIRCLE, { 1, 1, 1 }, "Here now")
+    hereOutline:SetPoint("CENTER", ui.legendHere)
     lg:SetWidth(x)
 
     -- Count (bottom-right).
@@ -773,7 +778,6 @@ function GJ:DrawMap()
 
     local col = memberColor(m)
     ui.legendTrail:SetVertexColor(col[1], col[2], col[3])
-    ui.legendHere:SetVertexColor(col[1], col[2], col[3])
 
     local cells = self:CellsOnMap(m, mapID)
     for _, c in ipairs(cells) do
