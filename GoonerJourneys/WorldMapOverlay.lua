@@ -160,6 +160,10 @@ function GJ:ShowOnWorldMap(guid, mapID)
     self.selectedGUID = guid
     self.showTrailOnWorldMap = true
     if not WorldMapFrame then return end
+    if InCombatLockdown() then
+        self:Print("Can't open the world map in combat - press M after the fight and the trail will be there.")
+        return
+    end
     if not WorldMapFrame:IsShown() then
         if ToggleWorldMap then ToggleWorldMap() else WorldMapFrame:Show() end
     end

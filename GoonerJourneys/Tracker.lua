@@ -21,10 +21,10 @@ GJ.CounterMilestones = {
         { 100, "Professional Floor Inspector", "Died 100 times.", "INV_Misc_Bone_HumanSkull_01" },
     },
     kills = {
-        { 100,   "Getting Warmed Up", "100 killing blows.", "INV_Sword_04" },
-        { 1000,  "Murder Hobo", "1,000 killing blows.", "INV_Sword_27" },
-        { 5000,  "Walking Extinction Event", "5,000 killing blows.", "Ability_Warrior_Rampage" },
-        { 10000, "Azeroth's Problem", "10,000 killing blows.", "Spell_Shadow_ShadowWordPain" },
+        { 100,   "Getting Warmed Up", "100 kills.", "INV_Sword_04" },
+        { 1000,  "Murder Hobo", "1,000 kills.", "INV_Sword_27" },
+        { 5000,  "Walking Extinction Event", "5,000 kills.", "Ability_Warrior_Rampage" },
+        { 10000, "Azeroth's Problem", "10,000 kills.", "Spell_Shadow_ShadowWordPain" },
     },
     critters = {
         { 1,   "Bunny Bully", "Killed a defenceless critter. Monster.", "INV_Misc_Food_15" },
@@ -56,9 +56,6 @@ GJ.CounterMilestones = {
     drownDeaths = {
         { 1, "Forgot To Breathe", "Drowned. Fish do it all the time, how hard can it be?", "Spell_Frost_SummonWaterElemental" },
     },
-    lavaDeaths = {
-        { 1, "Hot Stuff", "Died in lava or fire. It was hot.", "Spell_Fire_Fire" },
-    },
     critterDeaths = {
         { 1, "Humiliated By Wildlife", "Was killed by a critter. Never live this down.", "INV_Misc_Food_15" },
     },
@@ -81,8 +78,8 @@ GJ.CounterMilestones = {
         { 1000, "Has Read Zero Quest Text", "Turned in 1,000 quests.", "INV_Misc_Book_11" },
     },
     pvpKills = {
-        { 1,   "First Blood (Real)", "Got a killing blow on another player.", "Ability_Warrior_BattleShout" },
-        { 100, "Gank Squad", "100 player killing blows.", "Ability_Warrior_BattleShout" },
+        { 1,   "First Blood (Real)", "Got an honorable kill on another player.", "Ability_Warrior_BattleShout" },
+        { 100, "Gank Squad", "100 honorable kills.", "Ability_Warrior_BattleShout" },
     },
     goldGained = {
         { 100 * 10000,  "Gold Digger", "Earned 100 gold over your journey.", "INV_Misc_Coin_02" },
@@ -239,25 +236,35 @@ end
 -- Played time (silently request it, without spamming chat)
 ---------------------------------------------------------------------------
 local playedAt, playedTotal
-local suppressPlayed = false
+local mutedFrames = {}
+
+-- Briefly stop the chat windows listening for TIME_PLAYED_MSG so our silent
+-- request does not print "Total time played" into chat. This only toggles
+-- event registration; it never replaces Blizzard functions (which would
+-- taint the UI).
+local function unmuteChat()
+    for frame in pairs(mutedFrames) do
+        frame:RegisterEvent("TIME_PLAYED_MSG")
+    end
+    wipe(mutedFrames)
+end
 
 local function requestPlayed()
     if not RequestTimePlayed then return end
-    suppressPlayed = true
-    RequestTimePlayed()
-    C_Timer.After(5, function() suppressPlayed = false end)
-end
-
-if ChatFrame_DisplayTimePlayed then
-    local orig = ChatFrame_DisplayTimePlayed
-    ChatFrame_DisplayTimePlayed = function(...)
-        if suppressPlayed then return end
-        return orig(...)
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
+        local frame = _G["ChatFrame" .. i]
+        if frame and frame.IsEventRegistered and frame:IsEventRegistered("TIME_PLAYED_MSG") then
+            frame:UnregisterEvent("TIME_PLAYED_MSG")
+            mutedFrames[frame] = true
+        end
     end
+    RequestTimePlayed()
+    C_Timer.After(5, unmuteChat)
 end
 
 GJ:On("TIME_PLAYED_MSG", function(total)
-    suppressPlayed = false
+    C_Timer.After(0, unmuteChat)
+    if type(total) ~= "number" then return end
     playedTotal, playedAt = total, GetTime()
     GJ:SetStat("played", total)
 end)
@@ -352,8 +359,12 @@ GJ:On("ENCOUNTER_END", function(encounterID, encounterName, difficultyID, groupS
 end)
 
 ---------------------------------------------------------------------------
--- Combat log: kills, critters, deaths (cause), wipes, falling damage.
--- Wrapped in pcall in case the combat log is restricted.
+-- Kills, critters, deaths, falls and wipes.
+--
+-- WoW Forever runs on the modern engine where the combat log is off limits
+-- to addons (touching it triggers "blocked from an action only available to
+-- the Blizzard UI"), so everything here uses ordinary events and unit
+-- queries instead.
 ---------------------------------------------------------------------------
 local CRITTERS = {}
 for _, n in ipairs({
@@ -364,99 +375,161 @@ for _, n in ipairs({
 }) do CRITTERS[n] = true end
 GJ.CRITTERS = CRITTERS
 
-local lastDamage -- { src = name, spell = name, env = type, t = GetTime() }
-local groupDeaths = {}
+-- Some unit info can be a "secret value" on the modern engine; never
+-- compare or store those.
+local function safe(v)
+    if v == nil then return nil end
+    if issecretvalue and issecretvalue(v) then return nil end
+    return v
+end
+
+local function isCritter(unit)
+    local name = safe(UnitName(unit))
+    if name and CRITTERS[name] then return true end
+    local ctype = safe(UnitCreatureType and UnitCreatureType(unit))
+    return ctype == "Critter" or (ctype ~= nil and ctype == (CRITTER or "Critter"))
+end
+
+-- Kills: the "X dies, you gain N experience" message.
+local function patternFrom(fmt)
+    if type(fmt) ~= "string" then return nil end
+    local p = fmt:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+    p = p:gsub("%%%%s", "(.+)"):gsub("%%%%d", "(%%d+)")
+    -- Match only up to the end of the first sentence; bonus suffixes vary.
+    p = p:match("^(.-%(%%d%+%))") or p
+    return "^" .. p
+end
+local XP_PATTERN = patternFrom(COMBATLOG_XPGAIN_FIRSTPERSON) or "^(.+) dies, you gain (%d+) experience"
+
+GJ:On("CHAT_MSG_COMBAT_XP_GAIN", function(text)
+    text = safe(text)
+    if type(text) == "string" and text:match(XP_PATTERN) then
+        GJ:Bump("kills")
+    end
+end)
+
+GJ:On("CHAT_MSG_COMBAT_HONOR_GAIN", function(text)
+    text = safe(text)
+    -- Honorable kill messages name the victim; bonus honor messages do not.
+    if type(text) == "string" and text:find("dies") then
+        GJ:Bump("pvpKills")
+    end
+end)
+
+-- Critters: a critter we were targeting dies while we are attacking.
+local critterSeen = {}
+local function checkTargetCritter()
+    if not UnitExists("target") or not UnitIsDead("target") then return end
+    local guid = safe(UnitGUID("target"))
+    if not guid or critterSeen[guid] then return end
+    if isCritter("target") and (IsCurrentSpell and IsCurrentSpell(6603) or UnitAffectingCombat("player") or GJ.recentAttack) then
+        critterSeen[guid] = true
+        GJ:Bump("critters")
+    end
+end
+GJ:On("UNIT_HEALTH", function(unit) if unit == "target" then pcall(checkTargetCritter) end end)
+GJ:On("PLAYER_TARGET_CHANGED", function() GJ.recentAttack = nil end)
+GJ:On("UNIT_SPELLCAST_SENT", function(unit) if unit == "player" then GJ.recentAttack = GetTime() end end)
+
+-- Who is beating on us? Polled while in combat: our target if it is
+-- attacking us, otherwise any nameplate unit targeting us.
+local lastAttacker -- { name, t, critter }
+local function unitAttackingMe(unit)
+    if not UnitExists(unit) or not UnitCanAttack("player", unit) then return false end
+    return UnitIsUnit(unit .. "target", "player")
+end
+
+local function scanAttacker()
+    local found
+    if unitAttackingMe("target") then
+        found = "target"
+    elseif C_NamePlate and C_NamePlate.GetNamePlates then
+        for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
+            local unit = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+            if unit and unitAttackingMe(unit) then found = unit break end
+        end
+    end
+    if not found and UnitExists("target") and UnitCanAttack("player", "target") then
+        found = "target"
+    end
+    if found then
+        local name = safe(UnitName(found))
+        if name then lastAttacker = { name = name, t = GetTime(), critter = isCritter(found) } end
+    end
+end
+
+-- Falling and drowning.
+local fallStart, lastLongFall = nil, 0
+local breathRunning = false
+GJ:On("MIRROR_TIMER_START", function(timer) if timer == "BREATH" then breathRunning = true end end)
+GJ:On("MIRROR_TIMER_STOP", function(timer) if timer == "BREATH" then breathRunning = false end end)
+
+local poll = CreateFrame("Frame")
+local pollAcc = 0
+poll:SetScript("OnUpdate", function(_, dt)
+    pollAcc = pollAcc + dt
+    if pollAcc < 0.2 then return end
+    pollAcc = 0
+    if IsFalling and IsFalling() then
+        fallStart = fallStart or GetTime()
+    elseif fallStart then
+        if GetTime() - fallStart > 1.2 then
+            lastLongFall = GetTime()
+            GJ:Bump("falls")
+        end
+        fallStart = nil
+    end
+    if UnitAffectingCombat("player") then
+        pcall(scanAttacker)
+    end
+end)
+
 local lastWipe = 0
 local sessionDeaths = 0
 
-local function groupGUIDs()
-    local set = {}
-    set[UnitGUID("player")] = true
-    local n = GetNumGroupMembers and GetNumGroupMembers() or 0
-    if IsInRaid and IsInRaid() then
-        for i = 1, n do local g = UnitGUID("raid" .. i) if g then set[g] = true end end
-    else
-        for i = 1, 4 do local g = UnitGUID("party" .. i) if g then set[g] = true end end
+local function checkWipe()
+    if not IsInInstance() or not IsInGroup or not IsInGroup() then return end
+    local size = GetNumGroupMembers()
+    if size < 3 then return end
+    local prefix = IsInRaid() and "raid" or "party"
+    local dead = UnitIsDeadOrGhost("player") and 1 or 0
+    local count = IsInRaid() and size or (size - 1)
+    for i = 1, count do
+        local u = prefix .. i
+        if UnitExists(u) and not UnitIsUnit(u, "player") and UnitIsDeadOrGhost(u) then dead = dead + 1 end
     end
-    return set, math.max(1, n)
-end
-
-local ENV_TEXT = {
-    FALLING = "falling", Falling = "falling",
-    DROWNING = "drowning", Drowning = "drowning",
-    FATIGUE = "fatigue", Fatigue = "fatigue",
-    FIRE = "fire", Fire = "fire",
-    LAVA = "lava", Lava = "lava",
-    SLIME = "slime", Slime = "slime",
-}
-
-local function onCombatLog()
-    local _, sub, _, srcGUID, srcName, _, _, dstGUID, dstName, _, _, a12, a13, _, a15 = CombatLogGetCurrentEventInfo()
-    local me = UnitGUID("player")
-    if sub == "PARTY_KILL" and srcGUID == me then
-        if dstGUID and dstGUID:find("^Player%-") then
-            GJ:Bump("pvpKills")
-        elseif dstName and CRITTERS[dstName] then
-            GJ:Bump("critters")
-        else
-            GJ:Bump("kills")
-        end
-    elseif dstGUID == me then
-        if sub == "ENVIRONMENTAL_DAMAGE" then
-            local env = ENV_TEXT[a12] or tostring(a12 or "the environment"):lower()
-            lastDamage = { env = env, t = GetTime() }
-            if env == "falling" then GJ:Bump("falls") end
-        elseif sub == "SWING_DAMAGE" or sub == "RANGE_DAMAGE" or sub == "SPELL_DAMAGE"
-            or sub == "SPELL_PERIODIC_DAMAGE" or sub == "DAMAGE_SHIELD" then
-            local spell = (sub ~= "SWING_DAMAGE") and a13 or nil
-            lastDamage = { src = srcName, spell = spell, t = GetTime() }
-        end
-    end
-    if sub == "UNIT_DIED" and dstGUID and dstGUID:find("^Player%-") then
-        local group, size = groupGUIDs()
-        if group[dstGUID] and size >= 3 then
-            local now = GetTime()
-            groupDeaths[#groupDeaths + 1] = now
-            local recent = 0
-            for i = #groupDeaths, 1, -1 do
-                if now - groupDeaths[i] <= 20 then recent = recent + 1 else table.remove(groupDeaths, i) end
-            end
-            local needed = math.min(size, 5) - 1
-            if recent >= math.max(3, needed) and now - lastWipe > 300 and IsInInstance() then
-                lastWipe = now
-                GJ:Bump("wipes")
-            end
-        end
+    if dead >= math.max(3, math.min(size, 5) - 1) and GetTime() - lastWipe > 300 then
+        lastWipe = GetTime()
+        GJ:Bump("wipes")
     end
 end
-
-GJ:On("COMBAT_LOG_EVENT_UNFILTERED", function()
-    pcall(onCombatLog)
-end)
 
 GJ:On("PLAYER_DEAD", function()
     sessionDeaths = sessionDeaths + 1
     local cause, extra = "unknown causes", {}
-    if lastDamage and GetTime() - lastDamage.t < 15 then
-        if lastDamage.env then
-            cause = lastDamage.env
-            extra.env = lastDamage.env
-        elseif lastDamage.src then
-            cause = lastDamage.src
-            if lastDamage.spell then cause = cause .. "'s " .. lastDamage.spell end
-            extra.src = lastDamage.src
+    local now = GetTime()
+    if breathRunning then
+        cause, extra.env = "drowning", "drowning"
+    elseif (IsFalling and IsFalling()) or now - lastLongFall < 3 or (fallStart and now - fallStart > 1) then
+        cause, extra.env = "falling", "falling"
+    else
+        pcall(scanAttacker)
+        if lastAttacker and now - lastAttacker.t < 10 then
+            cause = lastAttacker.name
+            extra.src = lastAttacker.name
+            extra.critter = lastAttacker.critter or nil
         end
     end
     GJ:AddEvent("death", cause, extra)
     GJ:Bump("deaths")
     if extra.env == "falling" then GJ:Bump("fallDeaths") end
     if extra.env == "drowning" then GJ:Bump("drownDeaths") end
-    if extra.env == "lava" or extra.env == "fire" then GJ:Bump("lavaDeaths") end
-    if extra.src and CRITTERS[extra.src] then GJ:Bump("critterDeaths") end
-    if GetTime() - lastLevelUp < 60 then GJ:Silly("dingDead") end
+    if extra.critter or (extra.src and CRITTERS[extra.src]) then GJ:Bump("critterDeaths") end
+    if now - lastLevelUp < 60 then GJ:Silly("dingDead") end
     if IsResting() then GJ:Silly("townDeath") end
     if sessionDeaths >= 5 then GJ:Silly("sameDayDeaths") end
-    lastDamage = nil
+    lastAttacker = nil
+    C_Timer.After(4, function() pcall(checkWipe) end)
     GJ:SendLivePing()
 end)
 
@@ -510,14 +583,15 @@ GJ:On("CHAT_MSG_GUILD", function(...)
     if guid == UnitGUID("player") then GJ:Bump("guildMsgs") end
 end)
 
-local function onEmote(token)
-    if type(token) ~= "string" then return end
-    token = token:upper()
-    if token == "DANCE" then GJ:Bump("dances")
-    elseif token == "HUG" then GJ:Bump("hugs") end
-end
-if DoEmote then hooksecurefunc("DoEmote", onEmote) end
-if C_ChatInfo and C_ChatInfo.PerformEmote then hooksecurefunc(C_ChatInfo, "PerformEmote", onEmote) end
+-- Emotes: read our own emote messages rather than hooking emote functions.
+GJ:On("CHAT_MSG_TEXT_EMOTE", function(text, ...)
+    local guid = safe(select(11, ...))
+    text = safe(text)
+    if guid ~= UnitGUID("player") or type(text) ~= "string" then return end
+    text = text:lower()
+    if text:find("dance") then GJ:Bump("dances")
+    elseif text:find("hug") then GJ:Bump("hugs") end
+end)
 
 -- Jumps are counted locally and folded into stats every so often, so we do
 -- not mark stats dirty on every single spacebar press.

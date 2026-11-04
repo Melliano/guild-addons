@@ -58,13 +58,18 @@ check(aOnB and aOnB.gear[1] == aMe.gear[1], "Bob sees Alice's gear")
 -- Alice levels to 5 and dies to a rabbit; walks around.
 alice.level = 5
 alice:fire("PLAYER_LEVEL_UP", 5)
-alice.cleu = { 0, "SWING_DAMAGE", false, "Creature-0-1-2-3-721-0", "Rabbit", 0, 0, alice.guid, "Alice", 0, 0, 3 }
-alice:fire("COMBAT_LOG_EVENT_UNFILTERED")
+alice:fire("CHAT_MSG_COMBAT_XP_GAIN", "Kobold Vermin dies, you gain 45 experience.")
+alice:fire("CHAT_MSG_COMBAT_XP_GAIN", "Defias Thug dies, you gain 60 experience. (+30 exp Rested bonus)")
+alice:fire("CHAT_MSG_COMBAT_XP_GAIN", "You gain 250 experience.") -- quest XP, not a kill
+alice.target = { name = "Rabbit", hostile = true, attackingMe = true, critter = true }
+alice.inCombat = true
 alice:fire("PLAYER_DEAD")
+alice.target, alice.inCombat = nil, false
 for i = 1, 20 do alice.x = 0.1 + i * 0.03 Mock.advance(30) end
 Mock.advance(30) -- let the last trail batch flush
 
 print("Milestones")
+check((aMe.stats.kills or 0) == 2, "kills counted from XP messages only (" .. tostring(aMe.stats.kills) .. ")")
 check(A:HasEvent(aMe, "level", 5), "level 5 milestone recorded")
 check(A:HasEvent(aMe, "death"), "death recorded")
 check(A:HasEvent(aMe, "silly", "critterDeaths:1"), "silly 'Humiliated By Wildlife' unlocked")
@@ -119,6 +124,17 @@ Mock.advance(60)
 local dOnB = B:GetMember(dave.guid)
 check(dOnB and #dOnB.events == #D:Me().events, ("after joining, Bob gets Dave's pre-guild journey (%d/%d)"):format(dOnB and #dOnB.events or 0, #D:Me().events))
 check(dOnB and dOnB.guild == "Unregistered Hypercam Users", "Dave shows up as a guild member")
+
+print("Stays clear of Blizzard-only actions")
+local clean = true
+for _, cl in ipairs({ alice, bob, carl, dave }) do
+    if cl.events["COMBAT_LOG_EVENT_UNFILTERED"] or cl.touchedCombatLog then clean = false end
+    for name, fn in pairs(cl.originalGlobals) do
+        if rawget(cl.env, name) ~= fn then clean = false end
+    end
+end
+check(clean, "never registers for or reads the combat log, never replaces Blizzard functions")
+check(alice.env.ChatFrame1.registered, "chat frame gets its /played listener back")
 
 print("UI builds and refreshes without errors")
 local ok, err = pcall(function()
