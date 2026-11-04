@@ -92,6 +92,12 @@ local function createMain()
     ui.status:SetPoint("RIGHT", close, "LEFT", -12, 0)
     ui.status:SetJustifyH("RIGHT")
 
+    local upd = S.Button(header, "Update available", 150, 26, "primary")
+    upd:SetPoint("RIGHT", ui.status, "LEFT", -12, 0)
+    upd:SetScript("OnClick", function() GJ:ShowUpdatePopup() end)
+    upd:Hide()
+    ui.updateBtn = upd
+
     ui.frame = f
     return f
 end
@@ -213,11 +219,13 @@ local TABS = {
     { "stats", "Stats" },
     { "gear", "Gear" },
     { "map", "Journey Map" },
+    { "race", "Race to 60" },
     { "leaders", "Leaderboards" },
 }
 
 local QUICK = {
     { "LEVEL", function(m, s) return m.level or "-" end },
+    { "GOONER SCORE", function(m, s) return fmtNum(GJ:Score(m)) end },
     { "DEATHS", function(m, s) return fmtNum(s.deaths or 0) end },
     { "ZONES", function(m, s) return fmtNum(s.zones or 0) end },
     { "MILES", function(m, s) return ("%.1f"):format((s.distance or 0) / 1760) end },
@@ -835,6 +843,7 @@ end
 -- Leaderboards
 ---------------------------------------------------------------------------
 local BOARDS = {
+    { "Gooner Score", "INV_Misc_Toy_07", function(m) return GJ:Score(m) end },
     { "Highest level", "Spell_Holy_SurgeOfLight", function(m) return m.level or 0 end },
     { "Most deaths", "INV_Misc_Bone_HumanSkull_01", function(m) return m.stats.deaths or 0 end },
     { "Most kills", "INV_Sword_04", function(m) return m.stats.kills or 0 end },
@@ -946,6 +955,7 @@ function GJ:RefreshCurrentTab()
     elseif tab == "stats" then self:RefreshStats()
     elseif tab == "gear" then self:RefreshGear()
     elseif tab == "map" then self:RefreshMap(true)
+    elseif tab == "race" then self:RefreshRace()
     elseif tab == "leaders" then self:RefreshLeaders() end
 end
 
@@ -957,7 +967,8 @@ function GJ:RefreshHeader()
     ui.name:SetTextColor(col[1], col[2], col[3])
     ui.avatarRing:SetVertexColor(col[1], col[2], col[3])
     ui.avatar:SetTexture(S.ClassIcon(m.class))
-    local meta = ("Level %d %s %s"):format(m.level or 0, S.Pretty(m.race), S.ClassName(m.class))
+    local rankName = GJ:MemberRank(m)
+    local meta = ("Level %d %s %s   %s"):format(m.level or 0, S.Pretty(m.race), S.ClassName(m.class), S.Wrap(C.accent, rankName))
     local start = m.events[1] and m.events[1].t
     if start then meta = meta .. S.Wrap(C.faint, "   |   Journey began " .. date("%d %b %Y", start)) end
     ui.meta:SetText(meta)
@@ -993,6 +1004,11 @@ end
 
 function GJ:RefreshStatus()
     if not ui.status then return end
+    if self.newerVersion then
+        ui.updateBtn:SetLabel("Update to v" .. self.newerVersion)
+        ui.updateBtn:SetWidth(ui.updateBtn.label:GetStringWidth() + 28)
+        ui.updateBtn:Show()
+    end
     local q = self:QueueSize()
     ui.status:SetText(q > 0 and ("Syncing  " .. q) or ("v" .. self.version))
 end
@@ -1007,6 +1023,7 @@ local function build()
     createGear()
     createMap()
     createLeaders()
+    GJ:CreateRacePage(ui.pages.race, CONTENT_W, ui.pageH)
     f:SetScript("OnShow", function()
         if not GJ.selectedGUID then GJ.selectedGUID = GJ:PlayerGUID() end
         GJ:SelectMember(GJ.selectedGUID)
@@ -1047,3 +1064,5 @@ GJ:On("GJ_LIVE_UPDATED", function(guid)
         GJ:DrawMap()
     end
 end)
+
+GJ:On("GJ_UPDATE_AVAILABLE", function() GJ:RefreshStatus() end)

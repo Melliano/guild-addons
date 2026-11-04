@@ -76,6 +76,9 @@ local function enqueue(priority, body)
         end
     end
     local q = queues[priority]
+    -- Live pings are only useful while fresh: a new one replaces any that
+    -- haven't gone out yet (e.g. during a chat lockdown).
+    if priority == 1 then wipe(q) end
     for _, p in ipairs(parts) do q[#q + 1] = p end
 end
 

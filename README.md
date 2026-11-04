@@ -13,6 +13,11 @@ A Muddy Boots-style journey tracker for the whole guild. Every goon with the add
 - **Journey map:** a trail of everywhere they've walked (sampled every 30s), with skulls where they died, plus their live position.
 - **World map:** online goons show up live on your normal world map.
 - **Leaderboards:** most deaths, biggest yapper, critter murderer, most travelled and more.
+- **Guild news pop-ups:** cards slide in when a goon dings, dies, gets a first boss kill or an epic, unlocks a silly milestone or ranks up. Click one to open their journey.
+- **Race to 60:** a chart of everyone's level against hours played, plus "fastest to level 10/20/.../60" cards.
+- **Weekly recap:** your first login each week shows last week's highlights: levels gained, deaths, MVP, death of the week, biggest jumper and more.
+- **Gooner Score and ranks:** points for every milestone, from *Gooner Initiate* up to *Grand Gooner*.
+- **Update nudge:** if a guildie has a newer version, you get told, and an "Update" button appears with the download link.
 
 ### Install
 1. Download the latest `GoonerJourneys-x.y.z.zip` from the [Releases page](../../releases). For a test build, use the **Actions** tab → latest run → **Artifacts**.
@@ -25,6 +30,11 @@ Do **not** use GitHub's green "Download ZIP" button. It gives the folder the wro
 - Click the minimap button or type `/gooner` (also `/gj` or `/journey`).
 - Right-click the minimap button to toggle guildies on the world map.
 - `/gooner sync`: ask online guildies for any data you're missing.
+- `/gooner recap`: show this week's recap so far.
+- `/gooner versions`: see who's on which addon version. `/gooner update` shows the download link.
+- `/gooner news`: turn the guild news pop-ups on or off.
+- `/gooner announce`: also post your own news in guild chat (off by default).
+- `/gooner weekly`: turn the weekly recap on login on or off.
 - `/gooner interval 30`: change how often your trail is sampled (5-300 seconds).
 - `/gooner minimap`: hide or show the minimap button.
 

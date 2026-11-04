@@ -9,6 +9,9 @@ local DEFAULT_SETTINGS = {
     minimap = { angle = 215, hide = false },
     trailInterval = 30,       -- seconds between trail samples
     worldMapOverlay = true,   -- draw guildies + trails on the world map
+    toasts = true,            -- guild news pop-ups
+    announce = false,         -- post your own news in guild chat
+    weeklyRecap = true,       -- show last week's recap on first login of the week
     debug = false,
 }
 
@@ -83,6 +86,7 @@ function GJ:MyInfo()
         l = UnitLevel("player"),
         gu = self:GuildName(),
         s = UnitSex("player"),
+        av = GJ.version,
     }
 end
 
@@ -94,6 +98,10 @@ function GJ:ApplyInfo(member, info)
     if type(info.l) == "number" then member.level = info.l end
     if type(info.gu) == "string" then member.guild = info.gu end
     if type(info.s) == "number" then member.sex = info.s end
+    if type(info.av) == "string" then
+        member.ver = info.av
+        self:Fire("GJ_VERSION_SEEN", info.av, member)
+    end
 end
 
 function GJ:RefreshMyInfo()
@@ -166,13 +174,16 @@ function GJ:MergeEvents(guid, start, list)
     local have = #m.events
     if start > have + 1 then return -1 end
     local added = 0
+    local fresh = {}
     for i, ev in ipairs(list) do
         local seq = start + i - 1
         if seq > have and type(ev) == "table" and type(ev.k) == "string" then
             m.events[seq] = ev
             added = added + 1
+            fresh[#fresh + 1] = ev
         end
     end
+    if added > 0 then self:Fire("GJ_NEW_EVENTS", guid, fresh) end
     if added > 0 then
         m.updated = self:Now()
         self:Fire("GJ_DATA_CHANGED", guid, "events")

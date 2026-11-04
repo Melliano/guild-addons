@@ -208,10 +208,25 @@ SlashCmdList.GOONERJOURNEYS = function(input)
         else
             GJ:Print("Usage: /gooner interval <5-300>  (currently " .. GJ.db.settings.trailInterval .. "s)")
         end
+    elseif cmd == "recap" then
+        GJ:ShowCurrentRecap()
+    elseif cmd == "update" then
+        GJ:ShowUpdatePopup()
+    elseif cmd == "versions" then
+        GJ:PrintVersions()
+    elseif cmd == "toasts" or cmd == "news" then
+        GJ.db.settings.toasts = not GJ.db.settings.toasts
+        GJ:Print("Guild news pop-ups", GJ.db.settings.toasts and "on" or "off")
+    elseif cmd == "announce" then
+        GJ.db.settings.announce = not GJ.db.settings.announce
+        GJ:Print("Announcing your own news in guild chat", GJ.db.settings.announce and "on" or "off")
+    elseif cmd == "weekly" then
+        GJ.db.settings.weeklyRecap = not GJ.db.settings.weeklyRecap
+        GJ:Print("Weekly recap on login", GJ.db.settings.weeklyRecap and "on" or "off")
     elseif cmd == "debug" then
         GJ.db.settings.debug = not GJ.db.settings.debug
         GJ:Print("Debug", GJ.db.settings.debug and "on" or "off")
     else
-        GJ:Print("Commands: /gooner [show | sync | map | minimap | interval <sec> | debug]")
+        GJ:Print("Commands: /gooner [show | recap | sync | versions | update | news | announce | weekly | map | minimap | interval <sec> | debug]")
     end
 end
