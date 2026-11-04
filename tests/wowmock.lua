@@ -20,6 +20,8 @@ local function permissive()
             if k == "GetSize" then return 100, 100 end
             if k == "IsShown" then return false end
             if k == "GetStringHeight" then return 12 end
+            if k == "GetStringWidth" then return 60 end
+            if k == "GetVerticalScrollRange" or k == "GetVerticalScroll" then return 0 end
             if k == "GetFont" then return "Fonts\\FRIZQT__.TTF", 12, "" end
             if k == "GetFrameLevel" then return 1 end
             if k == "GetCenter" then return 50, 50 end

@@ -6,7 +6,7 @@ local Mock = require("wowmock")
 local FILES = {
     "GoonerJourneys/Core.lua", "GoonerJourneys/Serialize.lua", "GoonerJourneys/Data.lua",
     "GoonerJourneys/Comm.lua", "GoonerJourneys/Tracker.lua", "GoonerJourneys/Trail.lua",
-    "GoonerJourneys/Gear.lua", "GoonerJourneys/MapCanvas.lua", "GoonerJourneys/WorldMapOverlay.lua",
+    "GoonerJourneys/Gear.lua", "GoonerJourneys/Style.lua", "GoonerJourneys/MapCanvas.lua", "GoonerJourneys/WorldMapOverlay.lua",
     "GoonerJourneys/UI.lua", "GoonerJourneys/Minimap.lua",
 }
 

@@ -14,6 +14,7 @@ Comm.lua
 Tracker.lua
 Trail.lua
 Gear.lua
+Style.lua
 MapCanvas.lua
 WorldMapOverlay.lua
 UI.lua

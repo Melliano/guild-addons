@@ -47,12 +47,12 @@ local function addDot(x, y, r, g, b, size, scale)
     local t = dots[dotsUsed]
     if not t then
         t = overlay:CreateTexture(nil, "OVERLAY")
-        t:SetTexture("Interface\\Buttons\\WHITE8x8")
+        t:SetTexture(GJ.Style.CIRCLE)
         dots[dotsUsed] = t
     end
     local w, h = overlay:GetSize()
     t:SetSize(size / scale, size / scale)
-    t:SetVertexColor(r, g, b, 0.75)
+    t:SetVertexColor(r, g, b, 0.55)
     t:ClearAllPoints()
     t:SetPoint("CENTER", overlay, "TOPLEFT", x * w, -y * h)
     t:Show()
@@ -103,7 +103,7 @@ function GJ:RefreshWorldMapOverlay()
     if sel and self.showTrailOnWorldMap then
         local r, g, b = self:ClassColor(sel.class)
         for _, c in ipairs(self:CellsOnMap(sel, shownMap)) do
-            addDot(c[1], c[2], r, g, b, 5, scale)
+            addDot(c[1], c[2], r, g, b, 7, scale)
         end
         for _, ev in ipairs(sel.events) do
             if ev.k == "death" and ev.m == shownMap and ev.x then
@@ -122,7 +122,7 @@ function GJ:RefreshWorldMapOverlay()
                 local lines = { ("Level %d %s"):format(m.level or 0, m.class and (LOCALIZED_CLASS_NAMES_MALE[m.class] or m.class) or "") }
                 if m.live.z then lines[#lines + 1] = m.live.z end
                 if m.live.dead then lines[#lines + 1] = "|cffff5555Currently dead|r" end
-                addPin(x, y, "Interface\\Buttons\\WHITE8x8", 10, scale, m.name, lines, r, g, b, m.name)
+                addPin(x, y, GJ.Style.CIRCLE, 12, scale, m.name, lines, r, g, b, m.name)
             end
         end
     end
