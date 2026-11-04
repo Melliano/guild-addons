@@ -1,0 +1,217 @@
+-- Minimal World of Warcraft API mock so the addon can be loaded and its sync
+-- logic exercised outside the game. Each simulated player gets its own
+-- global environment; addon messages go over a shared in-memory "guild".
+local Mock = {}
+
+Mock.now = 1000          -- virtual GetTime()
+Mock.epoch = 1790000000  -- virtual time()
+Mock.clients = {}
+Mock.timers = {}
+Mock.sent = 0
+
+-- A permissive object: any method call works and returns another permissive
+-- object (good enough for frames/textures/fontstrings).
+local function permissive()
+    local obj = {}
+    local mt = {}
+    mt.__index = function(t, k)
+        local f = function(self, ...)
+            if k == "GetWidth" or k == "GetHeight" then return 100 end
+            if k == "GetSize" then return 100, 100 end
+            if k == "IsShown" then return false end
+            if k == "GetStringHeight" then return 12 end
+            if k == "GetFont" then return "Fonts\\FRIZQT__.TTF", 12, "" end
+            if k == "GetFrameLevel" then return 1 end
+            if k == "GetCenter" then return 50, 50 end
+            if k == "GetEffectiveScale" then return 1 end
+            return permissive()
+        end
+        rawset(t, k, f)
+        return f
+    end
+    mt.__call = function() return permissive() end
+    return setmetatable(obj, mt)
+end
+Mock.permissive = permissive
+
+function Mock.addTimer(delay, fn, ticker)
+    local t = { at = Mock.now + delay, fn = fn, every = ticker and delay or nil, cancelled = false }
+    t.Cancel = function(self) self.cancelled = true end
+    table.insert(Mock.timers, t)
+    return t
+end
+
+function Mock.advance(seconds, step)
+    step = step or 0.25
+    local target = Mock.now + seconds
+    while Mock.now < target do
+        Mock.now = Mock.now + step
+        Mock.epoch = Mock.epoch + step
+        local due = {}
+        for _, t in ipairs(Mock.timers) do
+            if not t.cancelled and t.at <= Mock.now then due[#due + 1] = t end
+        end
+        for _, t in ipairs(due) do
+            if t.every then
+                t.at = t.at + t.every
+            else
+                t.cancelled = true
+            end
+            local ok, err = pcall(t.fn, t)
+            if not ok then error(err) end
+        end
+        local live = {}
+        for _, t in ipairs(Mock.timers) do if not t.cancelled then live[#live + 1] = t end end
+        Mock.timers = live
+    end
+end
+
+-- Build a fresh environment for one simulated player.
+function Mock.newClient(opts)
+    local c = {
+        name = opts.name, guid = opts.guid, class = opts.class or "WARRIOR",
+        level = opts.level or 1, guild = opts.guild or "Unregistered Hypercam Users",
+        online = false, frames = {}, money = 0, mapID = opts.mapID or 1429,
+        x = opts.x or 0.5, y = opts.y or 0.5, inventory = {},
+    }
+    local env = {}
+    setmetatable(env, { __index = _G })
+    c.env = env
+    env._G = env
+
+    env.GetTime = function() return Mock.now end
+    env.time = function() return math.floor(Mock.epoch) end
+    env.date = function(fmt, t) return os.date(fmt, t or math.floor(Mock.epoch)) end
+    env.strjoin = function(sep, ...) return table.concat({ ... }, sep) end
+    env.tostringall = function(...)
+        local t = { ... }
+        for i = 1, select("#", ...) do t[i] = tostring(t[i]) end
+        return unpack(t, 1, select("#", ...))
+    end
+    env.wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
+    env.tinsert = table.insert
+    env.unpack = unpack
+    env.geterrorhandler = function() return function(e) error(e, 0) end end
+    env.hooksecurefunc = function(a, b, cfn)
+        if type(a) == "table" then
+            local orig = a[b]
+            a[b] = function(...) local r = { orig(...) } cfn(...) return unpack(r) end
+        else
+            local orig = env[a]
+            env[a] = function(...) local r = { orig(...) } b(...) return unpack(r) end
+        end
+    end
+    env.DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) c.log = c.log or {} table.insert(c.log, msg) end }
+    env.C_AddOns = { GetAddOnMetadata = function() return "test" end }
+    env.C_Timer = {
+        After = function(d, fn) Mock.addTimer(d, fn) end,
+        NewTicker = function(d, fn) return Mock.addTimer(d, fn, true) end,
+    }
+    env.CreateFrame = function(kind, name)
+        local f = permissive()
+        rawset(f, "RegisterEvent", function(self, ev) c.events = c.events or {} c.events[ev] = true end)
+        rawset(f, "SetScript", function(self, script, fn) if script == "OnEvent" then c.onEvent = fn end end)
+        if name then env[name] = f end
+        return f
+    end
+    env.UIParent = permissive()
+    env.Minimap = permissive()
+    env.UISpecialFrames = {}
+    env.GameTooltip = permissive()
+    env.GameTooltip_Hide = function() end
+    env.WorldMapFrame = nil
+    env.SlashCmdList = {}
+    env.RAID_CLASS_COLORS = { WARRIOR = { r = 0.78, g = 0.61, b = 0.43, colorStr = "ffc79c6e" }, MAGE = { r = 0.25, g = 0.78, b = 0.92, colorStr = "ff3fc7eb" } }
+    env.LOCALIZED_CLASS_NAMES_MALE = { WARRIOR = "Warrior", MAGE = "Mage" }
+    env.Enum = { UIMapType = { Zone = 3 } }
+    env.SOUNDKIT = {}
+    env.PlaySound = function() end
+
+    env.UnitGUID = function(u) if u == "player" then return c.guid end end
+    env.UnitName = function(u) if u == "player" then return c.name end end
+    env.UnitClass = function() return c.class, c.class end
+    env.UnitRace = function() return "Human", "Human" end
+    env.UnitSex = function() return 2 end
+    env.UnitLevel = function() return c.level end
+    env.UnitIsDeadOrGhost = function() return c.dead or false end
+    env.UnitOnTaxi = function() return false end
+    env.IsInGuild = function() return c.guild ~= nil end
+    env.GetGuildInfo = function() return c.guild end
+    env.IsInInstance = function() return false end
+    env.GetInstanceInfo = function() return nil end
+    env.GetZoneText = function() return "Elwynn Forest" end
+    env.IsResting = function() return false end
+    env.IsMounted = function() return false end
+    env.GetMoney = function() return c.money end
+    env.GetMaxPlayerLevel = function() return 60 end
+    env.GetInventoryItemLink = function(_, slot) return c.inventory[slot] end
+    env.GetInventoryItemID = function(_, slot)
+        local l = c.inventory[slot]
+        return l and tonumber(l:match("item:(%d+)"))
+    end
+    env.GetInventoryItemQuality = function(_, slot) return c.inventory[slot] and 2 end
+    env.GetItemInfo = function() return nil end
+    env.GetNumSkillLines = function() return 0 end
+    env.CombatLogGetCurrentEventInfo = function() return unpack(c.cleu or {}) end
+    env.RequestTimePlayed = function() end
+
+    env.C_Map = {
+        GetBestMapForUnit = function() return c.mapID end,
+        GetMapInfo = function(id) return { mapID = id, name = "Zone" .. id, mapType = 3, parentMapID = 0 } end,
+        GetPlayerMapPosition = function(id)
+            return { GetXY = function() return c.x, c.y end }
+        end,
+    }
+
+    env.C_ChatInfo = {
+        RegisterAddonMessagePrefix = function() return true end,
+        SendAddonMessage = function(prefix, text, channel)
+            if not c.online then return false end
+            assert(#text <= 255, "addon message too long: " .. #text)
+            assert(not text:find("%z"), "NUL in addon message")
+            Mock.sent = Mock.sent + 1
+            for _, other in ipairs(Mock.clients) do
+                if other.online and other.guild == c.guild then
+                    other:fire("CHAT_MSG_ADDON", prefix, text, channel, c.name)
+                end
+            end
+            return true
+        end,
+    }
+
+    function c:fire(event, ...)
+        if self.onEvent and self.events and self.events[event] then
+            self.onEvent(nil, event, ...)
+        end
+    end
+
+    function c:load(files)
+        local ns = {}
+        for _, path in ipairs(files) do
+            local fh = assert(io.open(path, "r"))
+            local src = fh:read("*a")
+            fh:close()
+            local chunk = assert(loadstring(src, path))
+            setfenv(chunk, env)
+            chunk("GoonerJourneys", ns)
+        end
+        self.GJ = ns
+        return ns
+    end
+
+    function c:login()
+        self.online = true
+        self:fire("ADDON_LOADED", "GoonerJourneys")
+        self:fire("PLAYER_LOGIN")
+        self:fire("PLAYER_ENTERING_WORLD")
+    end
+
+    function c:logout()
+        self.online = false
+    end
+
+    table.insert(Mock.clients, c)
+    return c
+end
+
+return Mock
