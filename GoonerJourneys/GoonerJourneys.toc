@@ -1,0 +1,20 @@
+## Interface: 16001
+## AllowLoadGameType: camelot
+## Title: |cffff7f00The Gooner Journeys|r
+## Notes: Every Unregistered Hypercam User's journey: milestones, deaths, stats, gear, trails and live positions.
+## Author: Unregistered Hypercam Users
+## Version: @project-version@
+## SavedVariables: GoonerJourneysDB
+## IconTexture: Interface\Icons\INV_Misc_Map_01
+
+Core.lua
+Serialize.lua
+Data.lua
+Comm.lua
+Tracker.lua
+Trail.lua
+Gear.lua
+MapCanvas.lua
+WorldMapOverlay.lua
+UI.lua
+Minimap.lua

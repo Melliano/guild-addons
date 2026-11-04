@@ -1,0 +1,53 @@
+name: Build addon zip
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run tests
+        run: |
+          pip install lupa
+          python tests/run_tests.py
+
+      - name: Build zip
+        id: build
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="dev-${GITHUB_SHA::7}"
+          fi
+          ./scripts/package.sh "$VERSION"
+          echo "zip=dist/GoonerJourneys-${VERSION}.zip" >> "$GITHUB_OUTPUT"
+
+      # Every build: download the zip from the Actions run page.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GoonerJourneys
+          path: ${{ steps.build.outputs.zip }}
+
+      # Tagged builds (e.g. v1.0.0): publish a GitHub Release with the zip.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.build.outputs.zip }}
+          generate_release_notes: true
