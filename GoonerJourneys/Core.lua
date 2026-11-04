@@ -10,6 +10,46 @@ if GJ.version:find("@", 1, true) then GJ.version = "dev" end
 GJ.COLOR = "|cffff7f00"
 
 ---------------------------------------------------------------------------
+-- API compatibility: WoW Forever runs on the modern engine where many old
+-- globals moved into C_Item / C_Spell. Prefer the new ones, fall back to
+-- the classic globals.
+---------------------------------------------------------------------------
+local C_Item = C_Item or {}
+
+function GJ.ItemInfo(item)
+    if item == nil then return nil end
+    if C_Item.GetItemInfo then return C_Item.GetItemInfo(item) end
+    if GetItemInfo then return GetItemInfo(item) end
+end
+
+function GJ.ItemIcon(item)
+    if item == nil then return nil end
+    local id = type(item) == "number" and item or tonumber(tostring(item):match("item:(%d+)"))
+    if id and C_Item.GetItemIconByID then return C_Item.GetItemIconByID(id) end
+    if id and GetItemIcon then return GetItemIcon(id) end
+    local _, _, _, _, _, _, _, _, _, tex = GJ.ItemInfo(item)
+    return tex
+end
+
+function GJ.ItemQualityColor(quality)
+    if C_Item.GetItemQualityColor then return C_Item.GetItemQualityColor(quality) end
+    if GetItemQualityColor then return GetItemQualityColor(quality) end
+    local c = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality]
+    if c then return c.r, c.g, c.b end
+    return 1, 1, 1
+end
+
+function GJ.ItemLevel(item)
+    if C_Item.GetDetailedItemLevelInfo then return C_Item.GetDetailedItemLevelInfo(item) end
+    if GetDetailedItemLevelInfo then return GetDetailedItemLevelInfo(item) end
+end
+
+function GJ.SpellName(spellID)
+    if C_Spell and C_Spell.GetSpellName then return C_Spell.GetSpellName(spellID) end
+    if GetSpellInfo then return (GetSpellInfo(spellID)) end
+end
+
+---------------------------------------------------------------------------
 -- Printing
 ---------------------------------------------------------------------------
 function GJ:Print(...)
