@@ -38,12 +38,5 @@ WoW addons can't use the internet, so there's no server. Each member's addon sto
 - `GoonerJourneys/`: the addon itself (Lua, Interface `16001`, game type `camelot`).
 - `tests/`: an offline simulation that loads the addon with a mocked WoW API and checks guild sync between three fake players. Run it with `pip install lupa && python tests/run_tests.py`.
 - `scripts/package.sh [version]`: builds `dist/GoonerJourneys-<version>.zip`.
-- CI builds and tests every push. Pushing a tag like `v1.0.0` publishes a GitHub Release with the zip attached:
-
-```bash
-git tag v1.0.0
-```
-
-```bash
-git push origin v1.0.0
-```
+- CI builds and tests every push.
+- **To publish a release:** go to **Actions** → **Build addon zip** → **Run workflow**, pick `main`, enter a version such as `0.2.0` and run it. GitHub creates the `v0.2.0` tag and a Release with the zip attached. Pushing a `v*` tag yourself does the same thing.

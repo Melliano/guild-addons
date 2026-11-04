@@ -448,6 +448,21 @@ GJ:On("GJ_LOGIN", function()
         GJ:SendLivePing()
         GJ:BroadcastDigest(true)
     end)
+    -- Joined (or changed) guild mid-session: introduce ourselves right away,
+    -- sharing everything recorded before there was a guild.
+    local knownGuild = GJ:GuildName()
+    GJ:On("PLAYER_GUILD_UPDATE", function()
+        C_Timer.After(3, function()
+            local guild = GJ:GuildName()
+            if guild and guild ~= knownGuild then
+                knownGuild = guild
+                GJ:RefreshMyInfo()
+                GJ:Print(("Joined %s - sharing your journey with the guild."):format(guild))
+                GJ:SendLivePing()
+                GJ:BroadcastDigest(true)
+            end
+        end)
+    end)
     C_Timer.NewTicker(DIGEST_INTERVAL, function()
         C_Timer.After(math.random() * 60, function() GJ:BroadcastDigest(false) end)
     end)

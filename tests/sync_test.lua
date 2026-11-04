@@ -103,6 +103,23 @@ Mock.advance(120)
 local cOnB = B:GetMember(carl.guid)
 check(cOnB and #cOnB.events == carlEvents, ("Bob catches up on Carl's solo events (%d/%d)"):format(cOnB and #cOnB.events or 0, carlEvents))
 
+print("Guildless player records their journey, then shares it after joining")
+local dave = Mock.newClient({ name = "Dave", guid = "Player-1-0000000D", level = 1 })
+dave.guild = nil
+local D = dave:load(FILES)
+dave:login()
+dave.level = 5
+dave:fire("PLAYER_LEVEL_UP", 5)
+Mock.advance(60)
+check(D:HasEvent(D:Me(), "level", 5), "Dave tracks milestones with no guild")
+check(B:GetMember(dave.guid) == nil, "nothing is shared before Dave has a guild")
+dave.guild = "Unregistered Hypercam Users"
+dave:fire("PLAYER_GUILD_UPDATE", "player")
+Mock.advance(60)
+local dOnB = B:GetMember(dave.guid)
+check(dOnB and #dOnB.events == #D:Me().events, ("after joining, Bob gets Dave's pre-guild journey (%d/%d)"):format(dOnB and #dOnB.events or 0, #D:Me().events))
+check(dOnB and dOnB.guild == "Unregistered Hypercam Users", "Dave shows up as a guild member")
+
 print("UI builds and refreshes without errors")
 local ok, err = pcall(function()
     B:ToggleUI()
