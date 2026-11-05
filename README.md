@@ -13,6 +13,8 @@ A Muddy Boots-style journey tracker for the whole guild. Every goon with the add
 - **Journey map:** a trail of everywhere they've walked (sampled every 30s), with skulls where they died, plus their live position.
 - **World map:** online goons show up live on your normal world map.
 - **Leaderboards:** most deaths, biggest yapper, critter murderer, most travelled and more.
+- **Guild death map:** every goon's deaths on one map, zone by zone, with the zone's deadliest killer. Hover a skull to see who died, to what and at what level; click it to open their journey.
+- **Guild quest log:** every quest a goon has picked up, with who's on it now, who has completed it and who dropped it. Filter to in-progress or completed, or search by quest or zone. Quests you finished before installing the addon are filled in once a guildie picks them up.
 - **Guild news pop-ups:** cards slide in when a goon dings, dies, gets a first boss kill or an epic, unlocks a silly milestone or ranks up. Click one to open their journey.
 - **Race to 60:** a chart of everyone's level against hours played, plus "fastest to level 10/20/.../60" cards.
 - **Weekly recap:** your first login each week shows last week's highlights: levels gained, deaths, MVP, death of the week, biggest jumper and more.

@@ -181,6 +181,32 @@ function Mock.newClient(opts)
         GetDetailedItemLevelInfo = function() return 10 end,
     }
     env.GetNumSkillLines = function() return 0 end
+
+    -- Quest log (classic API). c.questLog = { { id, title, level, header }, ... },
+    -- c.collapsed[header] = true hides that header's quests, c.completedQuests[id] = true.
+    c.questLog, c.collapsed, c.completedQuests = {}, {}, {}
+    local function questEntries()
+        local rows, headers, order = {}, {}, {}
+        for _, q in ipairs(c.questLog) do
+            if not headers[q.header] then headers[q.header] = {} order[#order + 1] = q.header end
+            table.insert(headers[q.header], q)
+        end
+        for _, h in ipairs(order) do
+            rows[#rows + 1] = { title = h, isHeader = true, isCollapsed = c.collapsed[h] or false }
+            if not c.collapsed[h] then
+                for _, q in ipairs(headers[h]) do rows[#rows + 1] = q end
+            end
+        end
+        return rows
+    end
+    env.GetNumQuestLogEntries = function() return #questEntries(), #c.questLog end
+    env.GetQuestLogTitle = function(i)
+        local r = questEntries()[i]
+        if not r then return nil end
+        if r.isHeader then return r.title, nil, nil, true, r.isCollapsed end
+        return r.title, r.level, nil, false, false, false, nil, r.id
+    end
+    env.C_QuestLog = { IsQuestFlaggedCompleted = function(id) return c.completedQuests[id] or false end }
     env.CombatLogGetCurrentEventInfo = function() c.touchedCombatLog = true end
     env.COMBATLOG_XPGAIN_FIRSTPERSON = "%s dies, you gain %d experience."
     -- c.target = { name = "Rabbit", hostile = true, attackingMe = true, critter = true, dead = false }

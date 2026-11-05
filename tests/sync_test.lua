@@ -5,9 +5,10 @@ local Mock = require("wowmock")
 
 local FILES = {
     "GoonerJourneys/Core.lua", "GoonerJourneys/Serialize.lua", "GoonerJourneys/Data.lua",
-    "GoonerJourneys/Comm.lua", "GoonerJourneys/Tracker.lua", "GoonerJourneys/Trail.lua",
+    "GoonerJourneys/Comm.lua", "GoonerJourneys/Tracker.lua", "GoonerJourneys/Quests.lua", "GoonerJourneys/Trail.lua",
     "GoonerJourneys/Gear.lua", "GoonerJourneys/Style.lua", "GoonerJourneys/Score.lua", "GoonerJourneys/MapCanvas.lua",
     "GoonerJourneys/WorldMapOverlay.lua", "GoonerJourneys/UI.lua", "GoonerJourneys/Race.lua",
+    "GoonerJourneys/DeathMap.lua", "GoonerJourneys/QuestLog.lua",
     "GoonerJourneys/News.lua", "GoonerJourneys/Recap.lua", "GoonerJourneys/Version.lua", "GoonerJourneys/GoonerZone.lua",
     "GoonerJourneys/Minimap.lua",
 }
@@ -264,6 +265,88 @@ local okWhere = pcall(function() C:PrintWhere() end)
 check(okWhere, "/gooner where prints without errors")
 carl.subzone = nil
 
+print("Guild death map")
+local deathMaps = B:GuildDeathMaps()
+local elwynn
+for _, entry in ipairs(deathMaps) do if entry.mapID == 1429 then elwynn = entry end end
+check(elwynn and elwynn.count >= 1, "Alice's death shows on the guild death map")
+local aliceDeath
+for _, d in ipairs(elwynn and elwynn.deaths or {}) do
+    if d.m.guid == alice.guid then aliceDeath = d end
+end
+check(aliceDeath and aliceDeath.ev.d == "Rabbit" and aliceDeath.ev.x, "death map pin knows the killer and the spot")
+
+print("Guild quest log")
+local function questRow(GJ, id)
+    for _, q in ipairs(GJ:GuildQuests()) do if q.id == id then return q end end
+end
+local function has(list, guid)
+    for _, m in ipairs(list or {}) do if m.guid == guid then return true end end
+    return false
+end
+-- Bob did The Fargodeep Mine long before he installed the addon.
+bob.completedQuests[62] = true
+carl.questLog = {
+    { id = 62, title = "The Fargodeep Mine", level = 7, header = "Elwynn Forest" },
+    { id = 60, title = "Kobold Candles", level = 7, header = "Elwynn Forest" },
+    { id = 61, title = "Gold Dust Exchange", level = 7, header = "Elwynn Forest" },
+}
+carl:fire("QUEST_ACCEPTED", 1, 62)
+carl:fire("QUEST_LOG_UPDATE")
+Mock.advance(60)
+local cState = C:QuestState(C:Me())
+check(cState[62] == "a" and cState[60] == "a" and cState[61] == "a", "Carl's picked-up quests are recorded")
+local q62 = questRow(B, 62)
+check(q62 and q62.n == "The Fargodeep Mine" and q62.z == "Elwynn Forest" and q62.lv == 7, "Bob sees Carl's quest with its name, zone and level")
+check(q62 and has(q62.active, carl.guid), "Bob sees Carl is on The Fargodeep Mine")
+check(q62 and has(q62.done, bob.guid), "Bob's old completion is filled in once a guildie picks the quest up")
+local q62c = questRow(C, 62)
+check(q62c and has(q62c.done, bob.guid), "Carl sees Bob has already done it")
+check(questRow(B, 999) == nil, "quests nobody picked up aren't listed")
+
+-- Carl turns in 62.
+carl:fire("QUEST_TURNED_IN", 62, 100, 0)
+carl.completedQuests[62] = true
+table.remove(carl.questLog, 1)
+carl:fire("QUEST_LOG_UPDATE")
+Mock.advance(30)
+q62 = questRow(B, 62)
+check(q62 and has(q62.done, carl.guid) and not has(q62.active, carl.guid), "Bob sees Carl completed The Fargodeep Mine")
+check(C:QuestState(C:Me())[62] == "c", "turning in doesn't re-add the quest as picked up")
+
+-- Collapsing a zone header hides quests from addons; that isn't dropping them.
+carl.collapsed["Elwynn Forest"] = true
+carl:fire("QUEST_LOG_UPDATE")
+Mock.advance(60)
+check(C:QuestState(C:Me())[60] == "a", "a collapsed quest log header doesn't count as dropping quests")
+carl.collapsed["Elwynn Forest"] = nil
+
+-- Carl drops Kobold Candles.
+for i, q in ipairs(carl.questLog) do if q.id == 60 then table.remove(carl.questLog, i) break end end
+carl:fire("QUEST_LOG_UPDATE")
+Mock.advance(5)
+check(C:QuestState(C:Me())[60] == "a", "a quest missing for a moment isn't dropped yet")
+Mock.advance(60)
+local q60 = questRow(B, 60)
+check(C:QuestState(C:Me())[60] == "x", "a quest gone for a while counts as dropped")
+check(q60 and has(q60.dropped, carl.guid) and #q60.active == 0, "dropped quests stay on the list, marked as dropped")
+
+-- Older versions never ask for quest logs, so we don't send them any.
+local questPushes = 0
+local origPushQuests = B.PushQuests
+B.PushQuests = function(...) questPushes = questPushes + 1 return origPushQuests(...) end
+local Ser = B.Serializer.Serialize
+bob:fire("CHAT_MSG_ADDON", "GoonJ", "S" .. Ser({ k = "D", v = 1, f = "Player-1-000000O1", d = {},
+    i = { n = "Oldie", gu = "Unregistered Hypercam Users" } }), "GUILD", "Oldie")
+Mock.advance(15)
+check(questPushes == 0, "no quest data is sent to guildies on older versions")
+bob:fire("CHAT_MSG_ADDON", "GoonJ", "S" .. Ser({ k = "D", v = 1, f = "Player-1-000000N1", d = {}, q = 1,
+    i = { n = "Newbie", gu = "Unregistered Hypercam Users" } }), "GUILD", "Newbie")
+Mock.advance(15)
+check(questPushes > 0, "quest data is sent to guildies who understand it")
+B.PushQuests = origPushQuests
+Mock.advance(120)
+
 print("Stays clear of Blizzard-only actions")
 local clean = true
 for _, cl in ipairs({ alice, bob, carl, dave }) do
@@ -280,7 +363,7 @@ local ok, err = pcall(function()
     B:ToggleUI()
     B.ui.frame:GetScript("OnShow")
     B:SelectMember(alice.guid)
-    for _, tab in ipairs({ "timeline", "stats", "gear", "map", "race", "leaders" }) do B:ShowTab(tab) end
+    for _, tab in ipairs({ "timeline", "stats", "gear", "map", "race", "leaders", "deaths", "quests" }) do B:ShowTab(tab) end
     B:ShowCurrentRecap()
 end)
 check(rawget(bob.env, "GetItemInfo") == nil and (bob.itemInfoCalls or 0) > 0,

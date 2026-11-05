@@ -14,6 +14,7 @@ local MAX_MSG = 250          -- Blizzard's limit is 255 bytes per message
 local CHUNK = MAX_MSG - 6    -- room for the chunk header
 local EVENTS_PER_PUSH = 12
 local CELLS_PER_PUSH = 150
+local QUESTS_PER_PUSH = 10
 local DIGEST_INTERVAL = 3 * 60     -- periodic full check so gaps fill in on their own
 local LIVE_INTERVAL = 15
 
@@ -322,6 +323,21 @@ function GJ:PushCells(member, fromIdx)
     markPushed(member.guid, "c", total)
 end
 
+function GJ:PushQuests(member, fromIdx)
+    local entries = member.quests or {}
+    local total = #entries
+    local idx = math.max(1, fromIdx)
+    while idx <= total do
+        local slice = {}
+        for i = idx, math.min(total, idx + QUESTS_PER_PUSH - 1) do
+            slice[#slice + 1] = entries[i]
+        end
+        self:SendBulk({ k = "K", v = PROTO, g = member.guid, s = idx, q = slice })
+        idx = idx + #slice
+    end
+    markPushed(member.guid, "k", total)
+end
+
 function GJ:PushStats(member)
     if (member.statsStamp or 0) == 0 then return end
     self:Send({ k = "S", v = PROTO, g = member.guid, t = member.statsStamp, s = member.stats, i = infoFor(member) })
@@ -353,7 +369,8 @@ function GJ:BroadcastDigest(force, onlyGuids)
     end
     -- p = partial: only the listed members, so nobody mistakes the missing
     -- ones for "has nothing" and re-sends everyone's data.
-    self:Send({ k = "D", v = PROTO, f = self:PlayerGUID(), d = d, i = self:MyInfo(), p = onlyGuids and true or nil })
+    -- q = we understand quest logs, so send us those too.
+    self:Send({ k = "D", v = PROTO, f = self:PlayerGUID(), d = d, i = self:MyInfo(), p = onlyGuids and true or nil, q = 1 })
 end
 
 local pendingPush = {} -- [guid] = { e = from, c = from, s = true, g = true }
@@ -372,6 +389,7 @@ local function flushPushes()
             if want.s and (mine or not alreadyPushed(guid, "s", m.statsStamp or 0, since)) then GJ:PushStats(m) end
             if want.g and (mine or not alreadyPushed(guid, "g", m.gearStamp or 0, since)) then GJ:PushGear(m) end
             if want.c and (mine or not alreadyPushed(guid, "c", #m.cells, since)) then GJ:PushCells(m, want.c) end
+            if want.k and (mine or not alreadyPushed(guid, "k", #(m.quests or {}), since)) then GJ:PushQuests(m, want.k) end
         end
     end
     wipe(pendingPush)
@@ -380,7 +398,7 @@ end
 local function schedulePush(guid, field, value)
     local p = pendingPush[guid]
     if not p then p = { since = GetTime() } pendingPush[guid] = p end
-    if field == "e" or field == "c" then
+    if field == "e" or field == "c" or field == "k" then
         p[field] = math.min(p[field] or math.huge, value)
     else
         p[field] = true
@@ -406,26 +424,29 @@ handlers.D = function(body, sender)
     local guild = GJ:GuildName()
     local theyHaveMore = {}
     local anyMore = false
+    -- Older versions don't know about quest logs; don't send them any.
+    local wantsQuests = body.q ~= nil
     -- What do they lack that we have?
     for guid, m in pairs(GJ.db.members) do
         if m.guild == guild or GJ:IsMe(guid) then
             local theirs = body.d[guid]
             if not theirs and body.p then theirs = GJ:DigestOf(m) end -- not asked about
-            theirs = theirs or { 0, 0, 0, 0 }
+            theirs = theirs or { 0, 0, 0, 0, 0 }
             local mine = GJ:DigestOf(m)
             if mine[1] > (theirs[1] or 0) then schedulePush(guid, "e", (theirs[1] or 0) + 1) end
             if mine[2] > (theirs[2] or 0) then schedulePush(guid, "c", (theirs[2] or 0) + 1) end
             if mine[3] > (theirs[3] or 0) then schedulePush(guid, "s") end
             if mine[4] > (theirs[4] or 0) then schedulePush(guid, "g") end
+            if wantsQuests and mine[5] > (theirs[5] or 0) then schedulePush(guid, "k", (theirs[5] or 0) + 1) end
         end
     end
     -- What do they have that we lack? Ask for it with a targeted digest.
     for guid, theirs in pairs(body.d) do
         if type(theirs) == "table" and not GJ:IsMe(guid) then
             local m = GJ:GetMember(guid)
-            local mine = m and GJ:DigestOf(m) or { 0, 0, 0, 0 }
-            for i = 1, 4 do
-                if (theirs[i] or 0) > mine[i] then
+            local mine = m and GJ:DigestOf(m) or { 0, 0, 0, 0, 0 }
+            for i = 1, 5 do
+                if (tonumber(theirs[i]) or 0) > mine[i] then
                     if GetTime() - (lastRequest[guid] or 0) > 60 then
                         theyHaveMore[guid] = true
                         anyMore = true
@@ -469,6 +490,14 @@ handlers.C = function(body)
     local n = GJ:MergeCells(body.g, body.s, list)
     if n < 0 then requestMissing(body.g) end
     if type(body.s) == "number" then markPushed(body.g, "c", body.s + #list - 1) end
+end
+
+handlers.K = function(body)
+    if type(body.g) ~= "string" or GJ:IsMe(body.g) then return end
+    if type(body.s) ~= "number" or type(body.q) ~= "table" then return end
+    local n = GJ:MergeQuests(body.g, body.s, body.q)
+    if n < 0 then requestMissing(body.g) end
+    markPushed(body.g, "k", body.s + #body.q - 1)
 end
 
 handlers.S = function(body)
@@ -618,6 +647,7 @@ local function flushOwn()
     if ownDirty.e then GJ:PushEvents(me, ownDirty.e) end
     if ownDirty.g then GJ:PushGear(me) end
     if ownDirty.c then GJ:PushCells(me, ownDirty.c) end
+    if ownDirty.k then GJ:PushQuests(me, ownDirty.k) end
     wipe(ownDirty)
 end
 
@@ -633,14 +663,14 @@ function GJ:MarkOwnDirty(field, fromIndex)
         end)
         return
     end
-    if field == "e" or field == "c" then
+    if field == "e" or field == "c" or field == "k" then
         ownDirty[field] = math.min(ownDirty[field] or math.huge, fromIndex)
     else
         ownDirty[field] = true
     end
     if not ownTimer then
         ownTimer = true
-        C_Timer.After(field == "e" and 2 or 20, flushOwn)
+        C_Timer.After((field == "e" or field == "k") and 2 or 20, flushOwn)
     end
 end
 

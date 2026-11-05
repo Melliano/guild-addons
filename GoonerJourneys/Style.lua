@@ -103,7 +103,8 @@ function S.Button(parent, text, w, h, style)
 end
 
 -- Tab strip: text tabs with an accent underline on the active one.
-function S.Tabs(parent, defs, onSelect)
+-- maxWidth (optional): squeeze the padding so every tab fits.
+function S.Tabs(parent, defs, onSelect, maxWidth)
     local strip = CreateFrame("Frame", nil, parent)
     strip:SetHeight(30)
     local line = S.Fill(strip, S.C.border, "BACKGROUND")
@@ -111,15 +112,26 @@ function S.Tabs(parent, defs, onSelect)
     line:SetPoint("BOTTOMRIGHT")
     line:SetHeight(1)
     strip.tabs = {}
-    local x = 0
-    for _, def in ipairs(defs) do
-        local key, label = def[1], def[2]
+    local buttons, textTotal = {}, 0
+    for i, def in ipairs(defs) do
         local t = CreateFrame("Button", nil, strip)
         t.text = S.Text(t, 13, S.C.muted, S.FONT)
         t.text:SetPoint("CENTER", 0, 1)
-        t.text:SetText(label)
-        local w = t.text:GetStringWidth() + 26
-        if w < 60 then w = 60 end
+        t.text:SetText(def[2])
+        buttons[i] = t
+        textTotal = textTotal + t.text:GetStringWidth()
+    end
+    local pad, minW = 26, 60
+    if maxWidth and #defs > 0 and textTotal + #defs * pad > maxWidth then
+        pad = math.max(10, math.floor((maxWidth - textTotal) / #defs))
+        minW = 0
+    end
+    local x = 0
+    for i, def in ipairs(defs) do
+        local key = def[1]
+        local t = buttons[i]
+        local w = t.text:GetStringWidth() + pad
+        if w < minW then w = minW end
         t:SetSize(w, 30)
         t:SetPoint("BOTTOMLEFT", x, 0)
         x = x + w

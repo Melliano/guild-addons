@@ -175,6 +175,7 @@ function Canvas:AddPin(x, y, texture, size, tooltipTitle, tooltipLines, round)
             GameTooltip:Show()
         end)
         p:SetScript("OnLeave", GameTooltip_Hide)
+        p:SetScript("OnClick", function(btn) if btn.onClick then btn.onClick() end end)
         self.pins[self.pinsUsed] = p
     end
     size = size or 18
@@ -185,6 +186,7 @@ function Canvas:AddPin(x, y, texture, size, tooltipTitle, tooltipLines, round)
     p.icon:SetTexture(texture)
     p.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     p.title, p.lines = tooltipTitle, tooltipLines
+    p.onClick = nil -- callers set this after AddPin if the pin is clickable
     local px, py = self:ToPixels(x, y)
     p:ClearAllPoints()
     p:SetPoint("CENTER", self.dotLayer, "TOPLEFT", px, -py)
