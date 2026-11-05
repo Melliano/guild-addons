@@ -106,7 +106,7 @@ function GJ:RefreshWorldMapOverlay()
             addDot(c[1], c[2], r, g, b, 7, scale)
         end
         for _, ev in ipairs(sel.events) do
-            if ev.k == "death" and ev.m == shownMap and ev.x then
+            if ev.k == "death" and not ev.dup and ev.m == shownMap and ev.x then
                 addPin(ev.x / 1000, ev.y / 1000, "Interface\\TargetingFrame\\UI-TargetingFrame-Skull", 14, scale,
                     sel.name .. " died here", { self:EventText(ev), date("%d %b %Y %H:%M", ev.t) })
             end

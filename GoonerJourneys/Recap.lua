@@ -33,7 +33,9 @@ function GJ:ComputeRecap(fromT, toT, baseline)
                 local t = ev.t or 0
                 if t >= fromT and t < toT then
                     p.score = p.score + self:EventPoints(ev)
-                    if ev.k == "death" then
+                    if ev.k == "death" and ev.dup then
+                        -- duplicate from an older version: ignore
+                    elseif ev.k == "death" then
                         p.deaths = p.deaths + 1
                         if not p.lastDeath or t > p.lastDeath.t then p.lastDeath = ev end
                     elseif ev.k == "boss" or ev.k == "dungeon" or ev.k == "raid" then

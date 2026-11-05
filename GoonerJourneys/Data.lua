@@ -167,6 +167,29 @@ function GJ:HasEvent(member, kind, detail)
     return false
 end
 
+-- Some clients fire PLAYER_DEAD twice for one death, so older versions
+-- recorded every death twice. A death within 15 seconds of the previous
+-- death is a duplicate: it's flagged (ev.dup) and ignored everywhere.
+local DUP_WINDOW = 15
+
+function GJ:MarkDuplicateDeaths(member, from)
+    local events = member.events
+    local lastDeath
+    for i = 1, #events do
+        local ev = events[i]
+        if type(ev) == "table" and ev.k == "death" then
+            if i >= (from or 1) and lastDeath and math.abs((ev.t or 0) - (lastDeath.t or 0)) <= DUP_WINDOW then
+                ev.dup = true
+            end
+            if not ev.dup then lastDeath = ev end
+        end
+    end
+end
+
+GJ:On("GJ_DB_READY", function()
+    for _, m in pairs(GJ.db.members) do GJ:MarkDuplicateDeaths(m) end
+end)
+
 -- Merge an incoming contiguous slice of events starting at sequence `start`.
 -- Returns the number of new events stored, or -1 if there was a gap.
 function GJ:MergeEvents(guid, start, list)
@@ -184,7 +207,12 @@ function GJ:MergeEvents(guid, start, list)
             fresh[#fresh + 1] = ev
         end
     end
-    if added > 0 then self:Fire("GJ_NEW_EVENTS", guid, fresh) end
+    if added > 0 then
+        self:MarkDuplicateDeaths(m, have + 1)
+        local real = {}
+        for _, ev in ipairs(fresh) do if not ev.dup then real[#real + 1] = ev end end
+        if #real > 0 then self:Fire("GJ_NEW_EVENTS", guid, real) end
+    end
     if added > 0 then
         m.updated = self:Now()
         self:Fire("GJ_DATA_CHANGED", guid, "events")

@@ -548,7 +548,18 @@ local function checkWipe()
     end
 end
 
+-- PLAYER_DEAD can fire more than once for a single death (e.g. on release
+-- or when logging in dead). Count it once, until we're alive again.
+local deadLatch = false
+local lastDeathAt = -1000
+GJ:On("PLAYER_ENTERING_WORLD", function() deadLatch = UnitIsDeadOrGhost("player") and true or false end)
+GJ:On("PLAYER_UNGHOST", function() deadLatch = false end)
+GJ:On("PLAYER_ALIVE", function() if not UnitIsDeadOrGhost("player") then deadLatch = false end end)
+
 GJ:On("PLAYER_DEAD", function()
+    if deadLatch or GetTime() - lastDeathAt < 15 then return end
+    deadLatch = true
+    lastDeathAt = GetTime()
     sessionDeaths = sessionDeaths + 1
     local cause, extra = "unknown causes", {}
     local now = GetTime()
@@ -732,11 +743,39 @@ end
 ---------------------------------------------------------------------------
 -- Login
 ---------------------------------------------------------------------------
+-- Take duplicate deaths recorded by older versions back off our counters.
+-- Remembers how many were already corrected, so it only happens once.
+function GJ:FixDuplicateDeathStats()
+    local me = self:Me()
+    local dups = { deaths = 0, fallDeaths = 0, drownDeaths = 0, critterDeaths = 0 }
+    for _, ev in ipairs(me.events) do
+        if ev.k == "death" and ev.dup then
+            dups.deaths = dups.deaths + 1
+            if ev.env == "falling" then dups.fallDeaths = dups.fallDeaths + 1 end
+            if ev.env == "drowning" then dups.drownDeaths = dups.drownDeaths + 1 end
+            if ev.critter or (ev.src and CRITTERS[ev.src]) then dups.critterDeaths = dups.critterDeaths + 1 end
+        end
+    end
+    local priv = self.db.private
+    priv.deathDupsFixed = priv.deathDupsFixed or {}
+    local done = priv.deathDupsFixed[me.guid] or {}
+    local s = stats()
+    for stat, n in pairs(dups) do
+        local todo = n - (done[stat] or 0)
+        if todo > 0 then
+            self:SetStat(stat, math.max(0, (s[stat] or 0) - todo))
+            done[stat] = n
+        end
+    end
+    priv.deathDupsFixed[me.guid] = done
+end
+
 GJ:On("GJ_LOGIN", function()
     local me = GJ:RefreshMyInfo()
     if #me.events == 0 then
         GJ:AddEvent("start", nil)
     end
+    GJ:FixDuplicateDeathStats()
     lastMoney = GetMoney()
     C_Timer.After(5, function()
         recordLevel(UnitLevel("player"))

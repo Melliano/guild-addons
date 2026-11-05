@@ -27,6 +27,7 @@ GJ.RANKS = {
 }
 
 function GJ:EventPoints(ev)
+    if ev.dup then return 0 end
     if ev.k == "item" then return ITEM_POINTS[ev.q or 0] or 0 end
     if ev.k == "silly" and SPECIAL[ev.d] then return SPECIAL[ev.d] end
     return POINTS[ev.k] or 0

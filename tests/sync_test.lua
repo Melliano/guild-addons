@@ -265,6 +265,48 @@ check(rawget(bob.env, "GetItemInfo") == nil and (bob.itemInfoCalls or 0) > 0,
 check(A:Me().gear.ilvl == 10, "average item level read via C_Item")
 check(ok, "UI tabs render: " .. tostring(err))
 
+print("Deaths are only counted once")
+do
+    local gil = Mock.newClient({ name = "Gil", guid = "Player-1-00000010", level = 9 })
+    gil.guild = "Death Guild"
+    local G = gil:load(FILES)
+    gil:login()
+    Mock.advance(10)
+    gil.dead = true
+    gil:fire("PLAYER_DEAD")
+    gil:fire("PLAYER_DEAD")          -- the game fires it again for the same death
+    Mock.advance(2)
+    gil:fire("PLAYER_ALIVE")         -- released spirit: a ghost, still dead
+    gil:fire("PLAYER_DEAD")
+    local function realDeaths(m)
+        local n = 0
+        for _, ev in ipairs(m.events) do if ev.k == "death" and not ev.dup then n = n + 1 end end
+        return n
+    end
+    check(realDeaths(G:Me()) == 1 and G:Me().stats.deaths == 1,
+        ("one death recorded, not several (events %d, stat %d)"):format(realDeaths(G:Me()), G:Me().stats.deaths or 0))
+    Mock.advance(30)
+    gil.dead = false
+    gil:fire("PLAYER_UNGHOST")
+    Mock.advance(30)
+    gil.dead = true
+    gil:fire("PLAYER_DEAD")
+    check(realDeaths(G:Me()) == 2 and G:Me().stats.deaths == 2, "a real second death still counts")
+
+    -- Old versions recorded doubles: they're flagged and taken off the count.
+    local me = G:Me()
+    local t = me.events[#me.events].t
+    me.events[#me.events + 1] = { t = t + 1, k = "death", d = "Rabbit", src = "Rabbit" }
+    me.stats.deaths = 3
+    G:MarkDuplicateDeaths(me)
+    G:FixDuplicateDeathStats()
+    check(me.events[#me.events].dup == true, "old duplicate death flagged")
+    check(me.stats.deaths == 2, ("old duplicate taken off the death count (%d)"):format(me.stats.deaths))
+    G:FixDuplicateDeathStats()
+    check(me.stats.deaths == 2, "correction only applied once")
+    gil:logout()
+end
+
 print("One-way guild channel: whisper fallback")
 do
     local whispersBefore = Mock.whispers or 0
