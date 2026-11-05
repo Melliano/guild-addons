@@ -14,6 +14,9 @@ local CONTENT_W = WIDTH - SIDEBAR_W - PAD * 2
 local ui = {}
 GJ.ui = ui
 
+-- Tabs about the whole guild rather than the selected goon.
+local GUILD_TABS = { leaders = true, deaths = true, quests = true }
+
 local function fmtNum(n)
     if type(n) ~= "number" then return tostring(n or "-") end
     if BreakUpLargeNumbers then return BreakUpLargeNumbers(n) end
@@ -199,7 +202,7 @@ function GJ:RefreshRoster()
             end
             row.sub:SetText(where or "")
             row.status:SetVertexColor(unpack(isOn and C.green or C.faint))
-            local selected = m.guid == self.selectedGUID and ui.currentTab ~= "leaders"
+            local selected = m.guid == self.selectedGUID and not GUILD_TABS[ui.currentTab]
             row.sel:SetShown(selected)
             row.stripe:SetShown(selected)
             row.stripe:SetVertexColor(col[1], col[2], col[3])
@@ -221,6 +224,8 @@ local TABS = {
     { "map", "Journey Map" },
     { "race", "Race to 60" },
     { "leaders", "Leaderboards" },
+    { "deaths", "Death Map" },
+    { "quests", "Quests" },
 }
 
 local QUICK = {
@@ -282,7 +287,7 @@ local function createDetail(f)
         ui.quick[i] = q
     end
 
-    ui.tabStrip = S.Tabs(d, TABS, function(key) GJ:ShowTab(key) end)
+    ui.tabStrip = S.Tabs(d, TABS, function(key) GJ:ShowTab(key) end, CONTENT_W)
     ui.tabStrip:SetPoint("TOPLEFT", 0, -130)
     ui.tabStrip:SetPoint("TOPRIGHT", 0, -130)
 
@@ -959,7 +964,9 @@ function GJ:RefreshCurrentTab()
     elseif tab == "gear" then self:RefreshGear()
     elseif tab == "map" then self:RefreshMap(true)
     elseif tab == "race" then self:RefreshRace()
-    elseif tab == "leaders" then self:RefreshLeaders() end
+    elseif tab == "leaders" then self:RefreshLeaders()
+    elseif tab == "deaths" then self:RefreshDeathMap()
+    elseif tab == "quests" then self:RefreshQuests() end
 end
 
 function GJ:RefreshHeader()
@@ -999,7 +1006,7 @@ end
 
 function GJ:SelectMember(guid)
     self.selectedGUID = guid
-    if ui.currentTab == "leaders" then ui.currentTab = "timeline" end
+    if GUILD_TABS[ui.currentTab] then ui.currentTab = "timeline" end
     self:RefreshHeader()
     self:ShowTab(ui.currentTab or "timeline")
     if WorldMapFrame and WorldMapFrame:IsShown() then self:RefreshWorldMapOverlay() end
@@ -1027,6 +1034,8 @@ local function build()
     createMap()
     createLeaders()
     GJ:CreateRacePage(ui.pages.race, CONTENT_W, ui.pageH)
+    GJ:CreateDeathMapPage(ui.pages.deaths, CONTENT_W, ui.pageH)
+    GJ:CreateQuestPage(ui.pages.quests, CONTENT_W, ui.pageH)
     f:SetScript("OnShow", function()
         if not GJ.selectedGUID then GJ.selectedGUID = GJ:PlayerGUID() end
         GJ:SelectMember(GJ.selectedGUID)
@@ -1055,7 +1064,7 @@ GJ:On("GJ_DATA_CHANGED", function(guid)
     C_Timer.After(1, function()
         refreshPending = false
         GJ:RefreshRoster()
-        if guid == GJ.selectedGUID or ui.currentTab == "leaders" then
+        if guid == GJ.selectedGUID or GUILD_TABS[ui.currentTab] then
             GJ:RefreshHeader()
             GJ:RefreshCurrentTab()
         end

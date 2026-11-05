@@ -62,6 +62,7 @@ function GJ:GetMember(guid, create)
             statsStamp = 0,
             gear = {},
             gearStamp = 0,
+            quests = {},
         }
         self.db.members[guid] = m
     end
@@ -321,6 +322,7 @@ function GJ:MergeSnapshot(guid, field, stamp, value)
 end
 
 -- Digest of what we hold for a member: counts and stamps.
+-- { events, cells, statsStamp, gearStamp, quest entries }
 function GJ:DigestOf(member)
-    return { #member.events, #member.cells, member.statsStamp or 0, member.gearStamp or 0 }
+    return { #member.events, #member.cells, member.statsStamp or 0, member.gearStamp or 0, #(member.quests or {}) }
 end
