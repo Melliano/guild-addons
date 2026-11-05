@@ -158,7 +158,8 @@ function Mock.newClient(opts)
     env.GetZoneText = function() return "Elwynn Forest" end
     env.GetSubZoneText = function() return c.subzone or "" end
     env.IsIndoors = function() return c.subzone == "Lion's Pride Inn" end
-    env.IsResting = function() return false end
+    env.IsResting = function() return c.resting or false end
+    env.GetMinimapZoneText = function() return c.minimapZone or c.subzone or "" end
     env.IsMounted = function() return false end
     env.GetMoney = function() return c.money end
     env.GetMaxPlayerLevel = function() return 60 end

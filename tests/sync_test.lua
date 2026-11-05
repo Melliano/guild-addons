@@ -240,6 +240,29 @@ carl:fire("ZONE_CHANGED_INDOORS")
 Mock.advance(10)
 check(#alertsOnBob == 2 and C:Me().stats.innVisits == 2, "coming back later alerts again (visit 2)")
 carl.subzone = nil
+Mock.advance(11 * 60)
+
+print("GOONER ZONE detection is forgiving")
+local function detects(sub, resting, mini)
+    carl.subzone, carl.resting, carl.minimapZone = sub, resting, mini
+    local r = C:CurrentGoonerZone()
+    carl.subzone, carl.resting, carl.minimapZone = nil, nil, nil
+    return r ~= nil
+end
+check(detects("Lion\226\128\153s Pride Inn"), "curly apostrophe still detected")
+check(detects("lions pride inn"), "lower case / no apostrophe still detected")
+check(detects("Goldshire", false, "Lion's Pride Inn"), "detected from the minimap zone text")
+check(detects("Goldshire", true), "resting in Goldshire counts as the inn")
+check(not detects("Goldshire", false), "walking through Goldshire doesn't")
+check(not detects("Northshire Abbey", true), "resting somewhere else doesn't")
+-- Already inside at login / after /reload: no zone event fires, it still alerts.
+local before = #alertsOnBob
+carl.subzone = "Lion's Pride Inn"
+Mock.advance(10)
+check(#alertsOnBob == before + 1, "already standing in the inn is picked up without a zone event")
+local okWhere = pcall(function() C:PrintWhere() end)
+check(okWhere, "/gooner where prints without errors")
+carl.subzone = nil
 
 print("Stays clear of Blizzard-only actions")
 local clean = true
