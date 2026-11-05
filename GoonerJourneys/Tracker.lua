@@ -575,7 +575,7 @@ GJ:On("PLAYER_DEAD", function()
     if sessionDeaths >= 5 then GJ:Silly("sameDayDeaths") end
     lastAttacker = nil
     C_Timer.After(4, function() pcall(checkWipe) end)
-    GJ:SendLivePing()
+    GJ:SendLivePing(true)
 end)
 
 ---------------------------------------------------------------------------
