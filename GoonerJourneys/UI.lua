@@ -317,6 +317,7 @@ local KIND_COLOR = {
 }
 
 local function filterMatch(filter, ev)
+    if ev.dup then return false end
     if filter == "all" then return true end
     if filter == "big" then return BIG[ev.k] or (ev.k == "silly" and ev.d == "maxLevel") end
     if filter == "death" then return ev.k == "death" end
@@ -798,7 +799,7 @@ function GJ:DrawMap()
     local deaths = 0
     for _, ev in ipairs(m.events) do
         if ev.m == mapID and ev.x then
-            if ev.k == "death" then
+            if ev.k == "death" and not ev.dup then
                 deaths = deaths + 1
                 local p = canvas:AddPin(ev.x / 1000, ev.y / 1000, "Interface\\TargetingFrame\\UI-TargetingFrame-Skull", 16,
                     S.Wrap(C.red, "Died here"), { self:EventText(ev), date("%d %b %Y %H:%M", ev.t), "Level " .. tostring(ev.l) })
