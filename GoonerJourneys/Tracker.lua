@@ -237,6 +237,7 @@ end
 ---------------------------------------------------------------------------
 local playedAt, playedTotal
 local mutedFrames = {}
+local pendingLevel -- level we just reached, waiting for /played to arrive
 
 -- Briefly stop the chat windows listening for TIME_PLAYED_MSG so our silent
 -- request does not print "Total time played" into chat. This only toggles
@@ -267,6 +268,21 @@ GJ:On("TIME_PLAYED_MSG", function(total)
     if type(total) ~= "number" then return end
     playedTotal, playedAt = total, GetTime()
     GJ:SetStat("played", total)
+    -- Level-by-level /played history for the Race to 60 chart.
+    local s = stats()
+    s.lvlp = s.lvlp or {}
+    s.lvlt = s.lvlt or {}
+    local level = pendingLevel or UnitLevel("player")
+    local changed = false
+    if pendingLevel and not s.lvlp[pendingLevel] then
+        s.lvlp[pendingLevel], s.lvlt[pendingLevel] = total, GJ:Now()
+        changed = true
+    elseif level == 1 and not s.lvlp[1] then
+        s.lvlp[1], s.lvlt[1] = 0, GJ:Now()
+        changed = true
+    end
+    pendingLevel = nil
+    if changed then touchStats() end
 end)
 
 function GJ:CurrentPlayed()
@@ -292,6 +308,7 @@ end
 
 GJ:On("PLAYER_LEVEL_UP", function(level)
     lastLevelUp = GetTime()
+    pendingLevel = level
     recordLevel(level)
     requestPlayed()
 end)

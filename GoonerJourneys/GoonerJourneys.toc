@@ -15,7 +15,13 @@ Tracker.lua
 Trail.lua
 Gear.lua
 Style.lua
+Score.lua
 MapCanvas.lua
 WorldMapOverlay.lua
 UI.lua
+Race.lua
+News.lua
+Recap.lua
+Version.lua
+GoonerZone.lua
 Minimap.lua

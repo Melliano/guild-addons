@@ -6,8 +6,10 @@ local Mock = require("wowmock")
 local FILES = {
     "GoonerJourneys/Core.lua", "GoonerJourneys/Serialize.lua", "GoonerJourneys/Data.lua",
     "GoonerJourneys/Comm.lua", "GoonerJourneys/Tracker.lua", "GoonerJourneys/Trail.lua",
-    "GoonerJourneys/Gear.lua", "GoonerJourneys/Style.lua", "GoonerJourneys/MapCanvas.lua", "GoonerJourneys/WorldMapOverlay.lua",
-    "GoonerJourneys/UI.lua", "GoonerJourneys/Minimap.lua",
+    "GoonerJourneys/Gear.lua", "GoonerJourneys/Style.lua", "GoonerJourneys/Score.lua", "GoonerJourneys/MapCanvas.lua",
+    "GoonerJourneys/WorldMapOverlay.lua", "GoonerJourneys/UI.lua", "GoonerJourneys/Race.lua",
+    "GoonerJourneys/News.lua", "GoonerJourneys/Recap.lua", "GoonerJourneys/Version.lua", "GoonerJourneys/GoonerZone.lua",
+    "GoonerJourneys/Minimap.lua",
 }
 
 local passed, failed = 0, 0
@@ -57,7 +59,14 @@ check(aOnB and aOnB.gear[1] == aMe.gear[1], "Bob sees Alice's gear")
 
 -- Alice levels to 5 and dies to a rabbit; walks around.
 alice.level = 5
+local toastsOnBob = {}
+local origToast = B.ShowToast
+B.ShowToast = function(self, guid, icon, title, detail, kind)
+    toastsOnBob[#toastsOnBob + 1] = { guid = guid, title = title, kind = kind }
+    return origToast(self, guid, icon, title, detail, kind)
+end
 alice:fire("PLAYER_LEVEL_UP", 5)
+alice:fire("TIME_PLAYED_MSG", 3600, 60)
 alice:fire("CHAT_MSG_COMBAT_XP_GAIN", "Kobold Vermin dies, you gain 45 experience.")
 alice:fire("CHAT_MSG_COMBAT_XP_GAIN", "Defias Thug dies, you gain 60 experience. (+30 exp Rested bonus)")
 alice:fire("CHAT_MSG_COMBAT_XP_GAIN", "You gain 250 experience.") -- quest XP, not a kill
@@ -125,6 +134,87 @@ local dOnB = B:GetMember(dave.guid)
 check(dOnB and #dOnB.events == #D:Me().events, ("after joining, Bob gets Dave's pre-guild journey (%d/%d)"):format(dOnB and #dOnB.events or 0, #D:Me().events))
 check(dOnB and dOnB.guild == "Unregistered Hypercam Users", "Dave shows up as a guild member")
 
+print("Guild news pop-ups")
+local sawDing, sawDeath = false, false
+for _, t in ipairs(toastsOnBob) do
+    if t.guid == alice.guid and t.kind == "level" and t.title:find("Alice reached level 5") then sawDing = true end
+    if t.guid == alice.guid and t.kind == "death" then sawDeath = true end
+end
+check(sawDing, "Bob gets a pop-up when Alice dings")
+check(sawDeath, "Bob gets a pop-up when Alice dies")
+local before = #toastsOnBob
+B:MergeEvents("Player-1-000000FF", 1, { { t = B:Now() - 7200, k = "level", d = 10, l = 10 } })
+check(#toastsOnBob == before, "old news synced later does not pop up")
+
+print("Gooner Score and ranks")
+local score = A:Score(A:Me())
+check(score > 0, "Alice has a Gooner Score (" .. score .. ")")
+check(B:Score(B:GetMember(alice.guid)) == score, "Bob computes the same score for Alice")
+check(A:Rank(0) == "Gooner Initiate" and A:Rank(600) == "Seasoned Gooner" and A:Rank(99999) == "Grand Gooner", "rank thresholds")
+
+print("Race to 60")
+check(A:Me().stats.lvlp and A:Me().stats.lvlp[5] == 3600, "level 5 timed at 1h played")
+local aOnBob = B:GetMember(alice.guid)
+check(aOnBob.stats.lvlp and aOnBob.stats.lvlp[5] == 3600, "Bob has Alice's level timings")
+check(B:TimeToLevel(aOnBob, 5) == 3600, "fastest-to lookup works")
+
+print("Weekly recap")
+local r = B:ComputeRecap(0, B:Now() + 1, nil)
+check(r.deaths >= 1 and r.mvp ~= nil, ("recap counts deaths (%d) and picks an MVP"):format(r.deaths))
+check(r.levels >= 1, "recap counts levels gained from timings")
+local ok1, err1 = pcall(function()
+    B.db.private.recap = { week = B.RecapWeekKey(B:Now()) - 1, baseline = {} }
+    B:CheckWeeklyRecap()
+end)
+check(ok1, "new week shows last week's recap: " .. tostring(err1))
+check(B.db.private.recap.week == B.RecapWeekKey(B:Now()), "recap rolls over to the new week")
+
+print("Update nudge")
+check(A:CompareVersions("0.3.0", "0.2.1") == 1 and A:CompareVersions("v0.2.1", "0.2.1") == 0 and A:CompareVersions("dev", "0.2.1") == nil, "version comparison")
+B.version = "0.2.1"
+A.version = "0.3.0"
+alice.online = true
+A:SendLivePing()
+Mock.advance(5)
+check(B.newerVersion == "0.3.0", "Bob learns a newer version exists from Alice's ping")
+Mock.advance(120) -- let Alice's backlog (sent under her old version label) drain
+A:SendLivePing()
+Mock.advance(5)
+alice.online = false
+check(B:GetMember(alice.guid).ver == "0.3.0", "Bob knows Alice's version")
+local ok2, err2 = pcall(function() B:ShowUpdatePopup() B:PrintVersions() end)
+check(ok2, "update popup and /gooner versions work: " .. tostring(err2))
+A.version = "test"
+
+print("GOONER ZONE DETECTED")
+local alertsOnBob = {}
+local origAlert = B.ShowGoonerAlert
+B.ShowGoonerAlert = function(self, member, place)
+    alertsOnBob[#alertsOnBob + 1] = { name = member.name, place = place }
+    return origAlert(self, member, place)
+end
+carl.subzone = "Lion's Pride Inn"
+carl:fire("ZONE_CHANGED_INDOORS")
+Mock.advance(10)
+check(#alertsOnBob == 1 and alertsOnBob[1].name == "Carl" and alertsOnBob[1].place == "the Lion's Pride Inn",
+    "Bob gets a GOONER ALERT when Carl walks into the Lion's Pride Inn")
+check(C:Me().stats.innVisits == 1 and C:HasEvent(C:Me(), "silly", "innVisits:1"), "Carl's visit counted and 'Gooner Zone Detected' unlocked")
+carl.subzone = "Goldshire"
+carl:fire("ZONE_CHANGED_INDOORS")
+Mock.advance(5)
+carl.subzone = "Lion's Pride Inn"
+carl:fire("ZONE_CHANGED_INDOORS")
+Mock.advance(10)
+check(#alertsOnBob == 1 and C:Me().stats.innVisits == 1, "popping out and back in within 10 minutes doesn't spam")
+carl.subzone = "Goldshire"
+carl:fire("ZONE_CHANGED_INDOORS")
+Mock.advance(11 * 60)
+carl.subzone = "Lion's Pride Inn"
+carl:fire("ZONE_CHANGED_INDOORS")
+Mock.advance(10)
+check(#alertsOnBob == 2 and C:Me().stats.innVisits == 2, "coming back later alerts again (visit 2)")
+carl.subzone = nil
+
 print("Stays clear of Blizzard-only actions")
 local clean = true
 for _, cl in ipairs({ alice, bob, carl, dave }) do
@@ -141,7 +231,8 @@ local ok, err = pcall(function()
     B:ToggleUI()
     B.ui.frame:GetScript("OnShow")
     B:SelectMember(alice.guid)
-    for _, tab in ipairs({ "timeline", "stats", "gear", "map", "leaders" }) do B:ShowTab(tab) end
+    for _, tab in ipairs({ "timeline", "stats", "gear", "map", "race", "leaders" }) do B:ShowTab(tab) end
+    B:ShowCurrentRecap()
 end)
 check(rawget(bob.env, "GetItemInfo") == nil and (bob.itemInfoCalls or 0) > 0,
     "gear tab draws items through C_Item when the old GetItemInfo global is gone")
