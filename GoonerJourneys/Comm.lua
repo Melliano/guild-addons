@@ -65,28 +65,17 @@ local function peer(sender)
     return p
 end
 
-local function whisperTargets()
-    local now, list = GetTime(), nil
-    for name, p in pairs(peers) do
-        if p.whisper and now - p.last < 180 then
-            list = list or {}
-            list[#list + 1] = name
-        end
-    end
-    return list
-end
-
--- Guild roster cache so we only accept whispered data from guildies.
-local roster, rosterSize = {}, 0
+-- Guild roster cache: who is a guildie, and who is online right now.
+local roster, rosterSize = {}, 0 -- [baseName] = isOnline
 local function refreshRoster()
     if not GetNumGuildMembers or not GetGuildRosterInfo then return end
     local total = GetNumGuildMembers() or 0
     wipe(roster)
     rosterSize = 0
     for i = 1, total do
-        local name = GetGuildRosterInfo(i)
+        local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
         if name then
-            roster[baseName(name)] = true
+            roster[baseName(name)] = online and true or false
             rosterSize = rosterSize + 1
         end
     end
@@ -94,8 +83,25 @@ end
 
 local function isGuildie(sender)
     if rosterSize == 0 then return true end -- roster not loaded yet: don't drop data
-    return roster[baseName(sender)] == true
+    return roster[baseName(sender)] ~= nil
 end
+
+-- Only whisper people who are clearly still online: heard from in the last
+-- 45s (live pings come every 15s) and not shown offline in the roster.
+-- Whispering someone offline makes the game print "No player named ...".
+local LIVE_WINDOW = 45
+local function whisperTargets()
+    local now, list = GetTime(), nil
+    for name, p in pairs(peers) do
+        if p.whisper and now - p.last < LIVE_WINDOW and roster[baseName(name)] ~= false then
+            list = list or {}
+            list[#list + 1] = name
+        end
+    end
+    return list
+end
+
+local recentWhisper = {} -- [baseName] = GetTime() of our last whisper to them
 
 local function inLockdown()
     if C_ChatInfo.InChatMessagingLockdown then
@@ -166,7 +172,12 @@ local function pump()
         if ok then
             table.remove(q, 1)
             tokens = tokens - 1
-            if item.ch == "GUILD" then stats.guild = stats.guild + 1 else stats.whisper = stats.whisper + 1 end
+            if item.ch == "GUILD" then
+                stats.guild = stats.guild + 1
+            else
+                stats.whisper = stats.whisper + 1
+                recentWhisper[baseName(item.to)] = now
+            end
         else
             stats.failed = stats.failed + 1
             stats.lastError = err
@@ -383,9 +394,8 @@ end
 handlers.D = function(body, sender)
     if body.f == GJ:PlayerGUID() or type(body.d) ~= "table" then return end
     if body.f then peer(sender).guid = body.f end
-    -- Their digest says they have nothing of ours: check they can hear us.
-    local ofMe = body.d[GJ:PlayerGUID()]
-    if body.f and (type(ofMe) ~= "table" or (ofMe[1] or 0) == 0) then GJ:ProbePeer(sender, body.f) end
+    -- Once per session with each guildie: check they can actually hear us.
+    if body.f then GJ:ProbePeer(sender, body.f) end
     if body.f and body.i then
         local m = GJ:GetMember(body.f, true)
         GJ:ApplyInfo(m, body.i)
@@ -489,7 +499,7 @@ local PROBE_WAIT = 20
 
 function GJ:ProbePeer(sender, guid)
     local p = peer(sender)
-    if p.whisper or (p.probing and GetTime() - p.probing < 120) then return end
+    if p.acked or p.whisper or (p.probing and GetTime() - p.probing < 120) then return end
     p.probing = GetTime()
     p.acked = false
     self:SendUrgent({ k = "Q", v = PROTO, f = self:PlayerGUID(), to = guid })
@@ -510,6 +520,51 @@ end
 handlers.R = function(body, sender)
     if body.to ~= GJ:PlayerGUID() then return end
     peer(sender).acked = true
+end
+
+---------------------------------------------------------------------------
+-- Offline guildies: stop whispering them the moment we know, and hide the
+-- "No player named X is currently playing" lines our whispers caused.
+---------------------------------------------------------------------------
+local function toPattern(fmt)
+    local pat = fmt:gsub("([%(%)%.%+%-%*%?%[%]%^%$])", "%%%1"):gsub("%%s", "(.-)")
+    return "^" .. pat .. "$"
+end
+local NOT_FOUND = toPattern(ERR_CHAT_PLAYER_NOT_FOUND_S or "No player named '%s' is currently playing.")
+local WENT_OFFLINE = toPattern(ERR_FRIEND_OFFLINE_S or "%s has gone offline.")
+
+local function markOffline(name)
+    local base = baseName(name and name:match("|Hplayer:([^|]+)|h") or name)
+    if not base then return end
+    if rosterSize > 0 and roster[base] ~= nil then roster[base] = false end
+    for sender, p in pairs(peers) do
+        if baseName(sender) == base then p.last = 0 end
+    end
+    for _, q in ipairs(queues) do
+        for i = #q, 1, -1 do
+            if q[i].ch == "WHISPER" and baseName(q[i].to) == base then table.remove(q, i) end
+        end
+    end
+end
+
+local function notFoundName(msg)
+    if type(msg) ~= "string" then return nil end
+    local name = msg:match(NOT_FOUND)
+    if name and recentWhisper[baseName(name)] and GetTime() - recentWhisper[baseName(name)] < 120 then
+        return name
+    end
+end
+
+GJ:On("CHAT_MSG_SYSTEM", function(msg)
+    if type(msg) ~= "string" then return end
+    local gone = notFoundName(msg) or msg:match(WENT_OFFLINE)
+    if gone then markOffline(gone) end
+end)
+
+if ChatFrame_AddMessageEventFilter then
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", function(_, _, msg)
+        if notFoundName(msg) then return true end
+    end)
 end
 
 -- Forget whisper mode for people who went offline; re-probe next time.
@@ -603,9 +658,13 @@ GJ:On("GJ_LOGIN", function()
     C_Timer.NewTicker(60, cleanupPartials)
     C_Timer.NewTicker(60, expirePeers)
     GJ:On("GUILD_ROSTER_UPDATE", refreshRoster)
-    if C_GuildInfo and C_GuildInfo.GuildRoster then pcall(C_GuildInfo.GuildRoster)
-    elseif GuildRoster then pcall(GuildRoster) end
+    local function requestRoster()
+        if C_GuildInfo and C_GuildInfo.GuildRoster then pcall(C_GuildInfo.GuildRoster)
+        elseif GuildRoster then pcall(GuildRoster) end
+    end
+    requestRoster()
     refreshRoster()
+    C_Timer.NewTicker(30, requestRoster)
     C_Timer.NewTicker(LIVE_INTERVAL, function() GJ:SendLivePing() end)
     -- Let the guild roster settle, then announce what we have.
     C_Timer.After(8, function()
