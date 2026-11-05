@@ -215,18 +215,29 @@ function Mock.newClient(opts)
 
     env.C_ChatInfo = {
         RegisterAddonMessagePrefix = function() return true end,
-        SendAddonMessage = function(prefix, text, channel)
+        SendAddonMessage = function(prefix, text, channel, target)
             if not c.online then return false end
             assert(#text <= 255, "addon message too long: " .. #text)
             assert(not text:find("%z"), "NUL in addon message")
             Mock.sent = Mock.sent + 1
+            if channel == "WHISPER" then
+                Mock.whispers = (Mock.whispers or 0) + 1
+                for _, other in ipairs(Mock.clients) do
+                    if other.online and other.name == target then
+                        other:fire("CHAT_MSG_ADDON", prefix, text, channel, c.name)
+                    end
+                end
+                return true
+            end
             for _, other in ipairs(Mock.clients) do
-                if other.online and other.guild == c.guild then
+                -- deafTo[name]: this client never receives name's GUILD messages
+                if other.online and other.guild == c.guild and not (other.deafTo and other.deafTo[c.name]) then
                     other:fire("CHAT_MSG_ADDON", prefix, text, channel, c.name)
                 end
             end
             return true
         end,
+        IsAddonMessagePrefixRegistered = function() return true end,
     }
 
     function c:fire(event, ...)
