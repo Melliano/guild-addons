@@ -11,7 +11,8 @@ local DEFAULT_SETTINGS = {
     worldMapOverlay = true,   -- draw guildies + trails on the world map
     toasts = true,            -- guild news pop-ups
     announce = false,         -- post your own news in guild chat
-    weeklyRecap = true,       -- show last week's recap on first login of the week
+    weeklyRecap = true,
+    goonerAlerts = true,      -- GOONER ZONE DETECTED banner       -- show last week's recap on first login of the week
     debug = false,
 }
 

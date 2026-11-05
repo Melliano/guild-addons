@@ -117,6 +117,9 @@ end
 local partial = {}
 local handlers = {}
 
+-- Other modules can add message kinds.
+function GJ:RegisterHandler(kind, fn) handlers[kind] = fn end
+
 local function dispatch(sender, payload)
     local ok, body = Deserialize(payload)
     if not ok or type(body) ~= "table" or type(body.k) ~= "string" then return end

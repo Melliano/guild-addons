@@ -177,6 +177,8 @@ local function announce(title, detail)
     flushAnnounce()
 end
 
+GJ.Announce = function(_, title, detail) announce(title, detail) end
+
 ---------------------------------------------------------------------------
 -- Hook up: new events from guildies + our own
 ---------------------------------------------------------------------------

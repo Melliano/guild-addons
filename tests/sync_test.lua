@@ -8,7 +8,7 @@ local FILES = {
     "GoonerJourneys/Comm.lua", "GoonerJourneys/Tracker.lua", "GoonerJourneys/Trail.lua",
     "GoonerJourneys/Gear.lua", "GoonerJourneys/Style.lua", "GoonerJourneys/Score.lua", "GoonerJourneys/MapCanvas.lua",
     "GoonerJourneys/WorldMapOverlay.lua", "GoonerJourneys/UI.lua", "GoonerJourneys/Race.lua",
-    "GoonerJourneys/News.lua", "GoonerJourneys/Recap.lua", "GoonerJourneys/Version.lua",
+    "GoonerJourneys/News.lua", "GoonerJourneys/Recap.lua", "GoonerJourneys/Version.lua", "GoonerJourneys/GoonerZone.lua",
     "GoonerJourneys/Minimap.lua",
 }
 
@@ -185,6 +185,35 @@ check(B:GetMember(alice.guid).ver == "0.3.0", "Bob knows Alice's version")
 local ok2, err2 = pcall(function() B:ShowUpdatePopup() B:PrintVersions() end)
 check(ok2, "update popup and /gooner versions work: " .. tostring(err2))
 A.version = "test"
+
+print("GOONER ZONE DETECTED")
+local alertsOnBob = {}
+local origAlert = B.ShowGoonerAlert
+B.ShowGoonerAlert = function(self, member, place)
+    alertsOnBob[#alertsOnBob + 1] = { name = member.name, place = place }
+    return origAlert(self, member, place)
+end
+carl.subzone = "Lion's Pride Inn"
+carl:fire("ZONE_CHANGED_INDOORS")
+Mock.advance(10)
+check(#alertsOnBob == 1 and alertsOnBob[1].name == "Carl" and alertsOnBob[1].place == "the Lion's Pride Inn",
+    "Bob gets a GOONER ALERT when Carl walks into the Lion's Pride Inn")
+check(C:Me().stats.innVisits == 1 and C:HasEvent(C:Me(), "silly", "innVisits:1"), "Carl's visit counted and 'Gooner Zone Detected' unlocked")
+carl.subzone = "Goldshire"
+carl:fire("ZONE_CHANGED_INDOORS")
+Mock.advance(5)
+carl.subzone = "Lion's Pride Inn"
+carl:fire("ZONE_CHANGED_INDOORS")
+Mock.advance(10)
+check(#alertsOnBob == 1 and C:Me().stats.innVisits == 1, "popping out and back in within 10 minutes doesn't spam")
+carl.subzone = "Goldshire"
+carl:fire("ZONE_CHANGED_INDOORS")
+Mock.advance(11 * 60)
+carl.subzone = "Lion's Pride Inn"
+carl:fire("ZONE_CHANGED_INDOORS")
+Mock.advance(10)
+check(#alertsOnBob == 2 and C:Me().stats.innVisits == 2, "coming back later alerts again (visit 2)")
+carl.subzone = nil
 
 print("Stays clear of Blizzard-only actions")
 local clean = true

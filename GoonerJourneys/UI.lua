@@ -458,6 +458,7 @@ local STAT_GROUPS = {
         { "Hugs", function(m, s) return fmtNum(s.hugs or 0) end },
         { "Guild messages", function(m, s) return fmtNum(s.guildMsgs or 0) end },
         { "Hearthstones", function(m, s) return fmtNum(s.hearths or 0) end },
+        { "Goldshire Inn visits", function(m, s) return fmtNum(s.innVisits or 0) end },
     } },
     { "WEALTH", {
         { "Gold earned", function(m, s) return GJ:FormatMoney(s.goldGained or 0) end },
@@ -845,6 +846,7 @@ end
 local BOARDS = {
     { "Gooner Score", "INV_Misc_Toy_07", function(m) return GJ:Score(m) end },
     { "Highest level", "Spell_Holy_SurgeOfLight", function(m) return m.level or 0 end },
+    { "Biggest gooner (inn visits)", "INV_Drink_05", function(m) return m.stats.innVisits or 0 end },
     { "Most deaths", "INV_Misc_Bone_HumanSkull_01", function(m) return m.stats.deaths or 0 end },
     { "Most kills", "INV_Sword_04", function(m) return m.stats.kills or 0 end },
     { "Critter murderer", "INV_Misc_Food_15", function(m) return m.stats.critters or 0 end },

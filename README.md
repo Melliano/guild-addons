@@ -17,6 +17,7 @@ A Muddy Boots-style journey tracker for the whole guild. Every goon with the add
 - **Race to 60:** a chart of everyone's level against hours played, plus "fastest to level 10/20/.../60" cards.
 - **Weekly recap:** your first login each week shows last week's highlights: levels gained, deaths, MVP, death of the week, biggest jumper and more.
 - **Gooner Score and ranks:** points for every milestone, from *Gooner Initiate* up to *Grand Gooner*.
+- **GOONER ZONE DETECTED:** when a goon walks into the Lion's Pride Inn in Goldshire, the whole guild gets a flashing alert with a raid-warning sound. Visits are counted, with milestones up to *Lives In Goldshire Inn*.
 - **Update nudge:** if a guildie has a newer version, you get told, and an "Update" button appears with the download link.
 
 ### Install
@@ -34,6 +35,7 @@ Do **not** use GitHub's green "Download ZIP" button. It gives the folder the wro
 - `/gooner versions`: see who's on which addon version. `/gooner update` shows the download link.
 - `/gooner news`: turn the guild news pop-ups on or off.
 - `/gooner announce`: also post your own news in guild chat (off by default).
+- `/gooner alerts`: turn the GOONER ZONE alerts on or off.
 - `/gooner weekly`: turn the weekly recap on login on or off.
 - `/gooner interval 30`: change how often your trail is sampled (5-300 seconds).
 - `/gooner minimap`: hide or show the minimap button.

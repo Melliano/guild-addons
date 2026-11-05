@@ -23,4 +23,5 @@ Race.lua
 News.lua
 Recap.lua
 Version.lua
+GoonerZone.lua
 Minimap.lua

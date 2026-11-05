@@ -142,6 +142,8 @@ function Mock.newClient(opts)
     env.IsInInstance = function() return false end
     env.GetInstanceInfo = function() return nil end
     env.GetZoneText = function() return "Elwynn Forest" end
+    env.GetSubZoneText = function() return c.subzone or "" end
+    env.IsIndoors = function() return c.subzone == "Lion's Pride Inn" end
     env.IsResting = function() return false end
     env.IsMounted = function() return false end
     env.GetMoney = function() return c.money end
