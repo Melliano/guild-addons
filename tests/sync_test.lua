@@ -186,6 +186,32 @@ local ok2, err2 = pcall(function() B:ShowUpdatePopup() B:PrintVersions() end)
 check(ok2, "update popup and /gooner versions work: " .. tostring(err2))
 A.version = "test"
 
+print("Falls need real fall damage")
+local falls0 = C:Me().stats.falls or 0
+for i = 1, 30 do -- 30 long jumps down a slope, no damage
+    carl.falling = true
+    Mock.advance(1.5)
+    carl.falling = false
+    Mock.advance(1)
+end
+check((C:Me().stats.falls or 0) == falls0, "long jumps without losing health are not falls")
+check(not C:HasEvent(C:Me(), "silly", "falls:25"), "no bogus Gravity Tester")
+carl.falling = true
+Mock.advance(2)
+carl.falling = false
+carl.hp = 70
+Mock.advance(1)
+check((C:Me().stats.falls or 0) == falls0 + 1, "a fall that hurts counts")
+carl.hp = 100
+carl.inCombat = true
+carl.falling = true
+Mock.advance(2)
+carl.falling = false
+carl.hp = 60
+Mock.advance(1)
+check((C:Me().stats.falls or 0) == falls0 + 1, "health lost mid-fight isn't blamed on falling")
+carl.inCombat, carl.hp = false, 100
+
 print("GOONER ZONE DETECTED")
 local alertsOnBob = {}
 local origAlert = B.ShowGoonerAlert
