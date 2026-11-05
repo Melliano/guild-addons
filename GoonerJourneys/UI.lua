@@ -453,7 +453,7 @@ local STAT_GROUPS = {
     } },
     { "NONSENSE", {
         { "Jumps", function(m, s) return fmtNum(s.jumps or 0) end },
-        { "Big falls", function(m, s) return fmtNum(s.falls or 0) end },
+        { "Fall damage taken", function(m, s) return fmtNum(s.falls or 0) end },
         { "Dances", function(m, s) return fmtNum(s.dances or 0) end },
         { "Hugs", function(m, s) return fmtNum(s.hugs or 0) end },
         { "Guild messages", function(m, s) return fmtNum(s.guildMsgs or 0) end },

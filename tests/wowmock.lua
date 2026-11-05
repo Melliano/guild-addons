@@ -62,6 +62,14 @@ function Mock.advance(seconds, step)
             local ok, err = pcall(t.fn, t)
             if not ok then error(err) end
         end
+        for _, cl in ipairs(Mock.clients) do
+            if cl.online and cl.onUpdates then
+                for frame, fn in pairs(cl.onUpdates) do
+                    local ok, err = pcall(fn, frame, step)
+                    if not ok then error("OnUpdate error: " .. tostring(err)) end
+                end
+            end
+        end
         local live = {}
         for _, t in ipairs(Mock.timers) do if not t.cancelled then live[#live + 1] = t end end
         Mock.timers = live
@@ -112,7 +120,13 @@ function Mock.newClient(opts)
     env.CreateFrame = function(kind, name)
         local f = permissive()
         rawset(f, "RegisterEvent", function(self, ev) c.events = c.events or {} c.events[ev] = true end)
-        rawset(f, "SetScript", function(self, script, fn) if script == "OnEvent" then c.onEvent = fn end end)
+        rawset(f, "SetScript", function(self, script, fn)
+            if script == "OnEvent" then c.onEvent = fn end
+            if script == "OnUpdate" then
+                c.onUpdates = c.onUpdates or {}
+                c.onUpdates[self] = fn
+            end
+        end)
         if name then env[name] = f end
         return f
     end
@@ -183,6 +197,7 @@ function Mock.newClient(opts)
     env.UnitCreatureType = function(u) return u == "target" and c.target and c.target.critter and "Critter" or "Beast" end
     env.UnitAffectingCombat = function() return c.inCombat or false end
     env.IsFalling = function() return c.falling or false end
+    env.UnitHealth = function(u) if u == "player" then return c.hp or 100 end end
     env.C_NamePlate = { GetNamePlates = function() return {} end }
     env.ChatFrame1 = { registered = true }
     function env.ChatFrame1:IsEventRegistered() return self.registered end

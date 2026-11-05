@@ -476,25 +476,52 @@ local function scanAttacker()
 end
 
 -- Falling and drowning.
-local fallStart, lastLongFall = nil, 0
+--
+-- Addons can't see fall damage directly any more, so a "fall" is: you were
+-- in the air for a while AND your health dropped when you landed, outside
+-- of combat. Being airborne alone isn't enough - ordinary jumps down a
+-- slope easily last over a second.
+local MIN_AIRTIME = 0.9
+local fallStart, fallHP = nil, nil
+local lastFallDamage = 0
+local lastLanding = { t = 0, air = 0 }
 local breathRunning = false
 GJ:On("MIRROR_TIMER_START", function(timer) if timer == "BREATH" then breathRunning = true end end)
 GJ:On("MIRROR_TIMER_STOP", function(timer) if timer == "BREATH" then breathRunning = false end end)
+
+local function playerHP()
+    local hp = safe(UnitHealth("player"))
+    return type(hp) == "number" and hp or nil
+end
+
+local function landed(airtime, startHP)
+    lastLanding = { t = GetTime(), air = airtime }
+    if airtime < MIN_AIRTIME or not startHP then return end
+    -- Give the damage a moment to apply, then compare.
+    C_Timer.After(0.3, function()
+        local hp = playerHP()
+        if hp and hp > 0 and hp < startHP and not UnitAffectingCombat("player") then
+            lastFallDamage = GetTime()
+            GJ:Bump("falls")
+        end
+    end)
+end
 
 local poll = CreateFrame("Frame")
 local pollAcc = 0
 poll:SetScript("OnUpdate", function(_, dt)
     pollAcc = pollAcc + dt
-    if pollAcc < 0.2 then return end
+    if pollAcc < 0.1 then return end
     pollAcc = 0
     if IsFalling and IsFalling() then
-        fallStart = fallStart or GetTime()
-    elseif fallStart then
-        if GetTime() - fallStart > 1.2 then
-            lastLongFall = GetTime()
-            GJ:Bump("falls")
+        if not fallStart then
+            fallStart = GetTime()
+            fallHP = playerHP()
         end
-        fallStart = nil
+    elseif fallStart then
+        local air, hp = GetTime() - fallStart, fallHP
+        fallStart, fallHP = nil, nil
+        landed(air, hp)
     end
     if UnitAffectingCombat("player") then
         pcall(scanAttacker)
@@ -527,7 +554,8 @@ GJ:On("PLAYER_DEAD", function()
     local now = GetTime()
     if breathRunning then
         cause, extra.env = "drowning", "drowning"
-    elseif (IsFalling and IsFalling()) or now - lastLongFall < 3 or (fallStart and now - fallStart > 1) then
+    elseif (fallStart and now - fallStart > 1.5) or (now - lastLanding.t < 1 and lastLanding.air > 1.5)
+        or now - lastFallDamage < 1 then
         cause, extra.env = "falling", "falling"
     else
         pcall(scanAttacker)
