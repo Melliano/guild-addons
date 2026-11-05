@@ -289,6 +289,18 @@ do
     check(not (F.peers.Erin and F.peers.Erin.whisper), "Fay keeps using the guild channel for Erin (it works that way)")
     local ok = pcall(function() E:PrintStatus() end)
     check(ok, "/gooner status prints without errors")
+
+    print("Guildie logs off while in whisper mode")
+    fay:logout()
+    Mock.advance(60)
+    local whispersAfterMinute = E.commStats.whisper
+    Mock.advance(300)
+    check((erin.offlineWhispers or 0) <= 1, ("at most one whisper to Fay after she logged off (%d)"):format(erin.offlineWhispers or 0))
+    check((erin.visibleSpam or 0) == 0, "no 'No player named' spam in Erin's chat")
+    check(E.commStats.whisper == whispersAfterMinute, "Erin stops whispering Fay once she's gone")
+    fay:login()
+    Mock.advance(120)
+    check(F:IsOnline(F:GetMember(erin.guid)), "Fay sees Erin again after logging back in")
     erin:logout()
     fay:logout()
 end

@@ -222,10 +222,23 @@ function Mock.newClient(opts)
             Mock.sent = Mock.sent + 1
             if channel == "WHISPER" then
                 Mock.whispers = (Mock.whispers or 0) + 1
+                local delivered = false
                 for _, other in ipairs(Mock.clients) do
                     if other.online and other.name == target then
                         other:fire("CHAT_MSG_ADDON", prefix, text, channel, c.name)
+                        delivered = true
                     end
+                end
+                if not delivered then
+                    -- What the real game does: a system message in chat.
+                    local msg = ("No player named '%s' is currently playing."):format(target)
+                    c.offlineWhispers = (c.offlineWhispers or 0) + 1
+                    local hidden = false
+                    for _, f in ipairs(c.chatFilters or {}) do
+                        if f(nil, "CHAT_MSG_SYSTEM", msg) then hidden = true end
+                    end
+                    if not hidden then c.visibleSpam = (c.visibleSpam or 0) + 1 end
+                    c:fire("CHAT_MSG_SYSTEM", msg)
                 end
                 return true
             end
@@ -247,6 +260,12 @@ function Mock.newClient(opts)
     end
 
     env.ChatFrame_DisplayTimePlayed = function() end
+    env.ChatFrame_AddMessageEventFilter = function(event, fn)
+        if event == "CHAT_MSG_SYSTEM" then
+            c.chatFilters = c.chatFilters or {}
+            table.insert(c.chatFilters, fn)
+        end
+    end
     c.originalGlobals = { ChatFrame_DisplayTimePlayed = env.ChatFrame_DisplayTimePlayed }
 
     function c:load(files)
