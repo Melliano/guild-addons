@@ -21,16 +21,50 @@ GJ.CounterMilestones.innVisits = {
     { 100, "Lives In Goldshire Inn", "Visited the Goldshire inn 100 times. Seek help.", "INV_Misc_Key_03" },
 }
 
+-- "Lion's Pride Inn", "Lion’s Pride Inn", "lions pride inn" -> "lionsprideinn"
+local function norm(text)
+    if type(text) ~= "string" then return "" end
+    return (text:lower():gsub("[^%a]", ""))
+end
+
+local NORMALISED = {}
+for name, label in pairs(GJ.GOONER_ZONES) do NORMALISED[norm(name)] = label end
+
+-- Everything the game says about where we are (for detection and /gooner where).
+function GJ:WhereAmI()
+    return {
+        sub = GetSubZoneText and GetSubZoneText() or "",
+        mini = GetMinimapZoneText and GetMinimapZoneText() or "",
+        zone = GetZoneText and GetZoneText() or "",
+        resting = IsResting and IsResting() or false,
+        indoors = IsIndoors and IsIndoors() or false,
+    }
+end
+
 -- Returns the alert text for where we are, or nil.
 function GJ:CurrentGoonerZone()
-    local sub = GetSubZoneText and GetSubZoneText() or ""
-    if self.GOONER_ZONES[sub] then return self.GOONER_ZONES[sub] end
-    -- Fallback for clients that report the inn as plain "Goldshire":
-    -- indoors and resting in Goldshire means you're in the inn.
-    if sub == "Goldshire" and IsIndoors and IsIndoors() and IsResting() then
+    local w = self:WhereAmI()
+    local sub, mini = norm(w.sub), norm(w.mini)
+    if NORMALISED[sub] then return NORMALISED[sub] end
+    if NORMALISED[mini] then return NORMALISED[mini] end
+    -- Any spelling of "Lion's Pride" (apostrophe styles, capitals, spacing).
+    if sub:find("lionspride", 1, true) or mini:find("lionspride", 1, true) then
+        return "the Lion's Pride Inn"
+    end
+    -- Fallback for clients that only say "Goldshire": the inn is the only
+    -- rested area in Goldshire, so resting there means you're in the inn.
+    if (sub == "goldshire" or mini == "goldshire") and w.resting then
         return "the Lion's Pride Inn"
     end
     return nil
+end
+
+function GJ:PrintWhere()
+    local w = self:WhereAmI()
+    self:Print(("Sub-zone: |cffffd100%s|r   Minimap: |cffffd100%s|r   Zone: |cffffd100%s|r"):format(w.sub, w.mini, w.zone))
+    DEFAULT_CHAT_FRAME:AddMessage(("   Resting: %s   Indoors: %s   Gooner zone: %s   Alerts: %s"):format(
+        tostring(w.resting), tostring(w.indoors), tostring(self:CurrentGoonerZone() or "no"),
+        self.db.settings.goonerAlerts and "on" or "|cffff5555off (/gooner alerts)|r"))
 end
 
 ---------------------------------------------------------------------------
@@ -136,6 +170,10 @@ GJ:On("ZONE_CHANGED", soon)
 GJ:On("ZONE_CHANGED_INDOORS", soon)
 GJ:On("ZONE_CHANGED_NEW_AREA", soon)
 GJ:On("PLAYER_UPDATE_RESTING", soon)
+-- Already inside when logging in or after /reload, and a safety net in case
+-- the game doesn't fire a zone event when you walk through the inn door.
+GJ:On("PLAYER_ENTERING_WORLD", function() C_Timer.After(3, check) end)
+GJ:On("GJ_LOGIN", function() C_Timer.NewTicker(3, check) end)
 
 -- Guildies: show their alert (once per 10 minutes per goon).
 local seen = {}
