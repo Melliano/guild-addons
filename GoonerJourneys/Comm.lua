@@ -87,9 +87,9 @@ local function isGuildie(sender)
 end
 
 -- Only whisper people who are clearly still online: heard from in the last
--- 45s (live pings come every 15s) and not shown offline in the roster.
+-- 100s (live pings come every 15-45s) and not shown offline in the roster.
 -- Whispering someone offline makes the game print "No player named ...".
-local LIVE_WINDOW = 45
+local LIVE_WINDOW = 100
 local function whisperTargets()
     local now, list = GetTime(), nil
     for name, p in pairs(peers) do
@@ -351,7 +351,9 @@ function GJ:BroadcastDigest(force, onlyGuids)
             d[guid] = self:DigestOf(m)
         end
     end
-    self:Send({ k = "D", v = PROTO, f = self:PlayerGUID(), d = d, i = self:MyInfo() })
+    -- p = partial: only the listed members, so nobody mistakes the missing
+    -- ones for "has nothing" and re-sends everyone's data.
+    self:Send({ k = "D", v = PROTO, f = self:PlayerGUID(), d = d, i = self:MyInfo(), p = onlyGuids and true or nil })
 end
 
 local pendingPush = {} -- [guid] = { e = from, c = from, s = true, g = true }
@@ -407,7 +409,9 @@ handlers.D = function(body, sender)
     -- What do they lack that we have?
     for guid, m in pairs(GJ.db.members) do
         if m.guild == guild or GJ:IsMe(guid) then
-            local theirs = body.d[guid] or { 0, 0, 0, 0 }
+            local theirs = body.d[guid]
+            if not theirs and body.p then theirs = GJ:DigestOf(m) end -- not asked about
+            theirs = theirs or { 0, 0, 0, 0 }
             local mine = GJ:DigestOf(m)
             if mine[1] > (theirs[1] or 0) then schedulePush(guid, "e", (theirs[1] or 0) + 1) end
             if mine[2] > (theirs[2] or 0) then schedulePush(guid, "c", (theirs[2] or 0) + 1) end
@@ -507,7 +511,7 @@ function GJ:ProbePeer(sender, guid)
         if p.acked or p.whisper then return end
         p.whisper = true
         GJ:Debug(("%s isn't receiving guild addon messages from us - whispering them instead."):format(sender))
-        GJ:SendLivePing()
+        GJ:SendLivePing(true)
         GJ:BroadcastDigest(true)
     end)
 end
@@ -605,17 +609,30 @@ end
 local ownDirty = {}
 local ownTimer = false
 
+local STATS_EVERY = 120 -- your stats tick constantly (every jump); share them at most this often
+local statsTimer, lastStatsPush = false, -STATS_EVERY
+
 local function flushOwn()
     ownTimer = false
     local me = GJ:Me()
     if ownDirty.e then GJ:PushEvents(me, ownDirty.e) end
-    if ownDirty.s then GJ:PushStats(me) end
     if ownDirty.g then GJ:PushGear(me) end
     if ownDirty.c then GJ:PushCells(me, ownDirty.c) end
     wipe(ownDirty)
 end
 
 function GJ:MarkOwnDirty(field, fromIndex)
+    if field == "s" then
+        if statsTimer then return end
+        statsTimer = true
+        local wait = math.max(20, STATS_EVERY - (GetTime() - lastStatsPush))
+        C_Timer.After(wait, function()
+            statsTimer = false
+            lastStatsPush = GetTime()
+            GJ:PushStats(GJ:Me())
+        end)
+        return
+    end
     if field == "e" or field == "c" then
         ownDirty[field] = math.min(ownDirty[field] or math.huge, fromIndex)
     else
@@ -632,20 +649,35 @@ GJ:On("GJ_OWN_EVENT", function()
     GJ:MarkOwnDirty("e", #me.events)
 end)
 
-function GJ:SendLivePing()
+local lastPing = { t = -1000, key = nil, n = 0, info = nil }
+local IDLE_PING = 45 -- standing still: ping less often (moving: every LIVE_INTERVAL)
+
+-- force: send even if nothing changed (login, death, guild join).
+function GJ:SendLivePing(force)
     if not IsInGuild() then return end
     local mapID, x, y = self:GetPlayerPosition()
     local inst
     local inInstance, instType = IsInInstance()
     if inInstance then inst = GetInstanceInfo() end
+    local px = x and math.floor(x * 1000 + 0.5)
+    local py = y and math.floor(y * 1000 + 0.5)
+    local dead = UnitIsDeadOrGhost("player") or nil
+    local key = table.concat({ tostring(mapID), tostring(px), tostring(py), tostring(inst), tostring(dead) }, ":")
+    local now = GetTime()
+    -- Identity (name, class, level, guild, version) rarely changes: include it
+    -- when it does, on the first few pings, and every few minutes.
+    local info = self:MyInfo()
+    local infoKey = table.concat({ tostring(info.n), tostring(info.l), tostring(info.gu), tostring(info.av) }, ":")
+    local infoChanged = infoKey ~= lastPing.info
+    if not force and not infoChanged and key == lastPing.key and now - lastPing.t < IDLE_PING - 1 then return end
+    local sendInfo = force or infoChanged or lastPing.n < 3 or lastPing.n % 8 == 0
+    lastPing.t, lastPing.key, lastPing.n, lastPing.info = now, key, lastPing.n + 1, infoKey
     self:SendLive({
-        k = "P", v = PROTO, g = self:PlayerGUID(), i = self:MyInfo(),
-        m = mapID,
-        x = x and math.floor(x * 1000 + 0.5),
-        y = y and math.floor(y * 1000 + 0.5),
+        k = "P", v = PROTO, g = self:PlayerGUID(), i = sendInfo and info or nil,
+        m = mapID, x = px, y = py,
         z = GetZoneText(),
         inst = inst,
-        dead = UnitIsDeadOrGhost("player") or nil,
+        dead = dead,
     })
 end
 
@@ -669,7 +701,7 @@ GJ:On("GJ_LOGIN", function()
     -- Let the guild roster settle, then announce what we have.
     C_Timer.After(8, function()
         GJ:RefreshMyInfo()
-        GJ:SendLivePing()
+        GJ:SendLivePing(true)
         GJ:BroadcastDigest(true)
     end)
     -- Joined (or changed) guild mid-session: introduce ourselves right away,
@@ -682,7 +714,7 @@ GJ:On("GJ_LOGIN", function()
                 knownGuild = guild
                 GJ:RefreshMyInfo()
                 GJ:Print(("Joined %s - sharing your journey with the guild."):format(guild))
-                GJ:SendLivePing()
+                GJ:SendLivePing(true)
                 GJ:BroadcastDigest(true)
             end
         end)
