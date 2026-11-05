@@ -265,5 +265,37 @@ check(rawget(bob.env, "GetItemInfo") == nil and (bob.itemInfoCalls or 0) > 0,
 check(A:Me().gear.ilvl == 10, "average item level read via C_Item")
 check(ok, "UI tabs render: " .. tostring(err))
 
+print("One-way guild channel: whisper fallback")
+do
+    local whispersBefore = Mock.whispers or 0
+    local erin = Mock.newClient({ name = "Erin", guid = "Player-1-0000000E", level = 12 })
+    local fay = Mock.newClient({ name = "Fay", guid = "Player-1-0000000F", level = 14 })
+    erin.guild, fay.guild = "Deaf Guild", "Deaf Guild"
+    erin.inventory[5] = "|cff1eff00|Hitem:5555::::::::12:::::::|h[Vest]|h|r"
+    fay.deafTo = { Erin = true } -- Fay never receives Erin's GUILD messages
+    local E, F = erin:load(FILES), fay:load(FILES)
+    erin:login()
+    fay:login()
+    Mock.advance(120)
+    local eOnF = F:GetMember(erin.guid)
+    check(eOnF ~= nil and eOnF.name == "Erin", "Fay learns about Erin despite never hearing her guild messages")
+    check(eOnF and #eOnF.events == #E:Me().events, ("Fay has Erin's events (%d/%d)"):format(eOnF and #eOnF.events or 0, #E:Me().events))
+    check(eOnF and eOnF.gear[5] ~= nil, "Fay sees Erin's gear")
+    check(eOnF and F:IsOnline(eOnF), "Fay sees Erin as online")
+    local fOnE = E:GetMember(fay.guid)
+    check(fOnE ~= nil and #fOnE.events == #F:Me().events, "Erin still gets Fay's journey over the guild channel")
+    check((Mock.whispers or 0) > whispersBefore, "whispers were used")
+    check(E.peers.Fay and E.peers.Fay.whisper == true, "Erin switched Fay to whisper mode")
+    check(not (F.peers.Erin and F.peers.Erin.whisper), "Fay keeps using the guild channel for Erin (it works that way)")
+    local ok = pcall(function() E:PrintStatus() end)
+    check(ok, "/gooner status prints without errors")
+    erin:logout()
+    fay:logout()
+end
+
+print("Guildies who hear each other don't fall back to whispers")
+check(not (A.peers.Bob and A.peers.Bob.whisper) and not (B.peers.Alice and B.peers.Alice.whisper),
+    "no whisper mode between Alice and Bob")
+
 print(("\n%d passed, %d failed, %d addon messages sent"):format(passed, failed, Mock.sent))
 if failed > 0 then os.exit(1) end

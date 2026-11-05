@@ -30,7 +30,8 @@ Do **not** use GitHub's green "Download ZIP" button. It gives the folder the wro
 ### Usage
 - Click the minimap button or type `/gooner` (also `/gj` or `/journey`).
 - Right-click the minimap button to toggle guildies on the world map.
-- `/gooner sync`: ask online guildies for any data you're missing.
+- `/gooner sync`: ask online guildies for any data you're missing (it also happens automatically every few minutes).
+- `/gooner status`: show what's been sent and received, and from whom. Use this first if a guildie isn't showing up.
 - `/gooner recap`: show this week's recap so far.
 - `/gooner versions`: see who's on which addon version. `/gooner update` shows the download link.
 - `/gooner news`: turn the guild news pop-ups on or off.
@@ -44,6 +45,8 @@ Do **not** use GitHub's green "Download ZIP" button. It gives the folder the wro
 WoW addons can't use the internet, so there's no server. Each member's addon stores everyone's journeys and swaps updates over the guild's hidden addon channel:
 - While you're online together, updates arrive within seconds.
 - When you log in, the addon tells the guild what it already has, and anyone online fills in the gaps. You'll get someone's progress even if they're offline, as long as somebody who saw it is online.
+- Every few minutes the addons compare notes again, so any gaps fill in without anyone typing a command.
+- Some players' games don't receive guild addon messages from certain guildies. The addon spots this, by asking over the guild channel and getting no answer, and then also whispers its data straight to that player. You don't need to do anything.
 - Only members running the addon get tracked.
 
 ### For developers

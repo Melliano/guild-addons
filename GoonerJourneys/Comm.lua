@@ -14,7 +14,7 @@ local MAX_MSG = 250          -- Blizzard's limit is 255 bytes per message
 local CHUNK = MAX_MSG - 6    -- room for the chunk header
 local EVENTS_PER_PUSH = 12
 local CELLS_PER_PUSH = 150
-local DIGEST_INTERVAL = 15 * 60
+local DIGEST_INTERVAL = 3 * 60     -- periodic full check so gaps fill in on their own
 local LIVE_INTERVAL = 15
 
 local Serialize = GJ.Serializer.Serialize
@@ -41,6 +41,61 @@ local tokens, MAX_TOKENS, REGEN = 6, 6, 0.9
 local lastTick = GetTime and GetTime() or 0
 local pausedUntil = 0
 local msgCounter = 0
+local MAX_FAILS = 5 -- a message the game keeps rejecting is dropped, not retried forever
+
+-- Diagnostics for /gooner status.
+local stats = { guild = 0, whisper = 0, failed = 0, dropped = 0, lastError = nil }
+GJ.commStats = stats
+
+---------------------------------------------------------------------------
+-- Peers: everyone we hear addon messages from. Some clients never receive
+-- our GUILD messages (seen on WoW Forever) even though we receive theirs.
+-- We detect that with a probe and then also whisper our data to them.
+---------------------------------------------------------------------------
+local peers = {} -- [sender] = { last, n, guid, whisper, probing, acked, channel }
+GJ.peers = peers
+
+local function baseName(name)
+    return name and name:match("^[^-]+") or name
+end
+
+local function peer(sender)
+    local p = peers[sender]
+    if not p then p = { n = 0, last = 0 } peers[sender] = p end
+    return p
+end
+
+local function whisperTargets()
+    local now, list = GetTime(), nil
+    for name, p in pairs(peers) do
+        if p.whisper and now - p.last < 180 then
+            list = list or {}
+            list[#list + 1] = name
+        end
+    end
+    return list
+end
+
+-- Guild roster cache so we only accept whispered data from guildies.
+local roster, rosterSize = {}, 0
+local function refreshRoster()
+    if not GetNumGuildMembers or not GetGuildRosterInfo then return end
+    local total = GetNumGuildMembers() or 0
+    wipe(roster)
+    rosterSize = 0
+    for i = 1, total do
+        local name = GetGuildRosterInfo(i)
+        if name then
+            roster[baseName(name)] = true
+            rosterSize = rosterSize + 1
+        end
+    end
+end
+
+local function isGuildie(sender)
+    if rosterSize == 0 then return true end -- roster not loaded yet: don't drop data
+    return roster[baseName(sender)] == true
+end
 
 local function inLockdown()
     if C_ChatInfo.InChatMessagingLockdown then
@@ -50,15 +105,15 @@ local function inLockdown()
     return false
 end
 
-local function rawSend(text)
-    local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, text, "GUILD")
-    if not ok then return false end
+local function rawSend(item)
+    local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, item.text, item.ch, item.to)
+    if not ok then return false, tostring(result) end
     -- Older clients return a boolean, newer return Enum.SendAddonMessageResult.
     if result == nil or result == true or result == 0 then return true end
-    return false
+    return false, tostring(result)
 end
 
-local function enqueue(priority, body)
+local function enqueue(priority, body, live)
     if not IsInGuild() then return end
     local payload = Serialize(body)
     local parts = {}
@@ -78,8 +133,21 @@ local function enqueue(priority, body)
     local q = queues[priority]
     -- Live pings are only useful while fresh: a new one replaces any that
     -- haven't gone out yet (e.g. during a chat lockdown).
-    if priority == 1 then wipe(q) end
-    for _, p in ipairs(parts) do q[#q + 1] = p end
+    if live then
+        for i = #q, 1, -1 do
+            if q[i].live then table.remove(q, i) end
+        end
+    end
+    local function add(ch, to)
+        for _, text in ipairs(parts) do
+            q[#q + 1] = { text = text, ch = ch, to = to, live = live, fails = 0 }
+        end
+    end
+    add("GUILD")
+    local targets = whisperTargets()
+    if targets then
+        for _, name in ipairs(targets) do add("WHISPER", name) end
+    end
 end
 
 local function pump()
@@ -93,17 +161,28 @@ local function pump()
             if #queues[i] > 0 then q = queues[i] break end
         end
         if not q then return end
-        if rawSend(q[1]) then
+        local item = q[1]
+        local ok, err = rawSend(item)
+        if ok then
             table.remove(q, 1)
             tokens = tokens - 1
+            if item.ch == "GUILD" then stats.guild = stats.guild + 1 else stats.whisper = stats.whisper + 1 end
         else
+            stats.failed = stats.failed + 1
+            stats.lastError = err
+            item.fails = item.fails + 1
+            if item.fails >= MAX_FAILS then
+                table.remove(q, 1)
+                stats.dropped = stats.dropped + 1
+            end
             pausedUntil = now + 2
             return
         end
     end
 end
 
-function GJ:SendLive(body) enqueue(1, body) end
+function GJ:SendLive(body) enqueue(1, body, true) end
+function GJ:SendUrgent(body) enqueue(1, body) end
 function GJ:Send(body) enqueue(2, body) end
 function GJ:SendBulk(body) enqueue(3, body) end
 
@@ -134,7 +213,15 @@ local function dispatch(sender, payload)
 end
 
 GJ:On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
-    if prefix ~= PREFIX or channel ~= "GUILD" then return end
+    if prefix ~= PREFIX or not sender then return end
+    if channel ~= "GUILD" and channel ~= "WHISPER" then return end
+    if channel == "WHISPER" and not isGuildie(sender) then return end
+    if baseName(sender) ~= GJ:PlayerName() then
+        local p = peer(sender)
+        p.n = p.n + 1
+        p.last = GetTime()
+        p.channel = channel
+    end
     local kind = text:sub(1, 1)
     if kind == "S" then
         dispatch(sender, text:sub(2))
@@ -142,7 +229,8 @@ GJ:On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     end
     local id, piece = text:match("^[BCE](%w+):(.*)$")
     if not id then return end
-    local key = sender .. "\1" .. id
+    -- The same chunks can arrive twice (guild + whisper), so keep them apart.
+    local key = sender .. "\1" .. channel .. "\1" .. id
     if kind == "B" then
         partial[key] = { piece, t = GetTime() }
     elseif partial[key] then
@@ -294,6 +382,10 @@ end
 
 handlers.D = function(body, sender)
     if body.f == GJ:PlayerGUID() or type(body.d) ~= "table" then return end
+    if body.f then peer(sender).guid = body.f end
+    -- Their digest says they have nothing of ours: check they can hear us.
+    local ofMe = body.d[GJ:PlayerGUID()]
+    if body.f and (type(ofMe) ~= "table" or (ofMe[1] or 0) == 0) then GJ:ProbePeer(sender, body.f) end
     if body.f and body.i then
         local m = GJ:GetMember(body.f, true)
         GJ:ApplyInfo(m, body.i)
@@ -390,6 +482,68 @@ handlers.P = function(body)
 end
 
 ---------------------------------------------------------------------------
+-- Can they hear us? Ask over the guild channel; if no answer comes back,
+-- they are deaf to our GUILD messages, so whisper them everything as well.
+---------------------------------------------------------------------------
+local PROBE_WAIT = 20
+
+function GJ:ProbePeer(sender, guid)
+    local p = peer(sender)
+    if p.whisper or (p.probing and GetTime() - p.probing < 120) then return end
+    p.probing = GetTime()
+    p.acked = false
+    self:SendUrgent({ k = "Q", v = PROTO, f = self:PlayerGUID(), to = guid })
+    C_Timer.After(PROBE_WAIT, function()
+        if p.acked or p.whisper then return end
+        p.whisper = true
+        GJ:Debug(("%s isn't receiving guild addon messages from us - whispering them instead."):format(sender))
+        GJ:SendLivePing()
+        GJ:BroadcastDigest(true)
+    end)
+end
+
+handlers.Q = function(body, sender)
+    if body.to ~= GJ:PlayerGUID() or type(body.f) ~= "string" then return end
+    GJ:SendUrgent({ k = "R", v = PROTO, f = GJ:PlayerGUID(), to = body.f })
+end
+
+handlers.R = function(body, sender)
+    if body.to ~= GJ:PlayerGUID() then return end
+    peer(sender).acked = true
+end
+
+-- Forget whisper mode for people who went offline; re-probe next time.
+local function expirePeers()
+    local now = GetTime()
+    for _, p in pairs(peers) do
+        if now - p.last > 300 then
+            p.whisper, p.probing, p.acked = nil, nil, nil
+        end
+    end
+end
+
+function GJ:PrintStatus()
+    local now = GetTime()
+    self:Print(("Sync status (v%s)"):format(self.version))
+    DEFAULT_CHAT_FRAME:AddMessage(("   Guild: %s   Prefix registered: %s   Chat lockdown: %s"):format(
+        tostring(self:GuildName()), tostring(C_ChatInfo.IsAddonMessagePrefixRegistered and C_ChatInfo.IsAddonMessagePrefixRegistered(PREFIX)),
+        tostring(inLockdown())))
+    DEFAULT_CHAT_FRAME:AddMessage(("   Sent: %d guild, %d whisper   Failed: %d   Dropped: %d   Queued: %d%s"):format(
+        stats.guild, stats.whisper, stats.failed, stats.dropped, self:QueueSize(),
+        stats.lastError and ("   Last error: " .. stats.lastError) or ""))
+    local any = false
+    for name, p in pairs(peers) do
+        any = true
+        local mode = p.whisper and "|cffffd100whispering them|r" or (p.acked and "|cff55ff55hears us|r") or (p.probing and "checking..." or "")
+        DEFAULT_CHAT_FRAME:AddMessage(("   %s: %d msgs, last %ds ago via %s  %s"):format(
+            name, p.n, math.floor(now - p.last), tostring(p.channel), mode))
+    end
+    if not any then
+        DEFAULT_CHAT_FRAME:AddMessage("   Heard from nobody yet. If a guildie with the addon is online, their game isn't reaching yours.")
+    end
+end
+
+---------------------------------------------------------------------------
 -- Our own updates: push new events/cells promptly so online guildies get
 -- them live.
 ---------------------------------------------------------------------------
@@ -447,6 +601,11 @@ GJ:On("GJ_LOGIN", function()
     C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
     C_Timer.NewTicker(0.25, pump)
     C_Timer.NewTicker(60, cleanupPartials)
+    C_Timer.NewTicker(60, expirePeers)
+    GJ:On("GUILD_ROSTER_UPDATE", refreshRoster)
+    if C_GuildInfo and C_GuildInfo.GuildRoster then pcall(C_GuildInfo.GuildRoster)
+    elseif GuildRoster then pcall(GuildRoster) end
+    refreshRoster()
     C_Timer.NewTicker(LIVE_INTERVAL, function() GJ:SendLivePing() end)
     -- Let the guild roster settle, then announce what we have.
     C_Timer.After(8, function()
