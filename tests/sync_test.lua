@@ -7,7 +7,7 @@ local FILES = {
     "GoonerJourneys/Core.lua", "GoonerJourneys/Serialize.lua", "GoonerJourneys/Data.lua",
     "GoonerJourneys/Comm.lua", "GoonerJourneys/Tracker.lua", "GoonerJourneys/Quests.lua", "GoonerJourneys/Trail.lua",
     "GoonerJourneys/Gear.lua", "GoonerJourneys/Style.lua", "GoonerJourneys/Score.lua", "GoonerJourneys/MapCanvas.lua",
-    "GoonerJourneys/WorldMapOverlay.lua", "GoonerJourneys/UI.lua", "GoonerJourneys/Race.lua",
+    "GoonerJourneys/WorldMapOverlay.lua", "GoonerJourneys/MapPing.lua", "GoonerJourneys/UI.lua", "GoonerJourneys/Race.lua",
     "GoonerJourneys/DeathMap.lua", "GoonerJourneys/QuestLog.lua",
     "GoonerJourneys/News.lua", "GoonerJourneys/Recap.lua", "GoonerJourneys/Version.lua", "GoonerJourneys/GoonerZone.lua",
     "GoonerJourneys/Minimap.lua",
@@ -346,6 +346,38 @@ Mock.advance(15)
 check(questPushes > 0, "quest data is sent to guildies who understand it")
 B.PushQuests = origPushQuests
 Mock.advance(120)
+
+print("World map pings")
+do
+    local hal = Mock.newClient({ name = "Hal", guid = "Player-1-00000011", class = "MAGE", level = 20 })
+    local ivy = Mock.newClient({ name = "Ivy", guid = "Player-1-00000012", level = 20 })
+    hal.guild, ivy.guild = "Ping Guild", "Ping Guild"
+    local H, I = hal:load(FILES), ivy:load(FILES)
+    hal:login()
+    ivy:login()
+    Mock.advance(30)
+    check(H:SendMapPing(1429, 0.42, 0.66) == true, "Hal pings Elwynn at 42, 66")
+    check(H:SendMapPing(1429, 0.5, 0.5) == false, "a second ping straight away is ignored")
+    Mock.advance(3)
+    local p = I:GetMapPing(hal.guid)
+    check(p and p.m == 1429 and math.abs(p.x - 0.42) < 0.002 and math.abs(p.y - 0.66) < 0.002, "Ivy gets Hal's ping")
+    check(p and p.name == "Hal" and p.class == "MAGE", "the ping carries Hal's name and class colour")
+    check(H:GetMapPing(hal.guid) ~= nil, "Hal sees his own ping")
+    check(H:SendMapPing(1429, 1.5, 0.2) == false, "off-map positions are rejected")
+    Mock.advance(3)
+    H:SendMapPing(1429, 0.10, 0.20)
+    Mock.advance(3)
+    local p2 = I:GetMapPing(hal.guid)
+    check(p2 and math.abs(p2.x - 0.10) < 0.002, "a new ping replaces the old one")
+    Mock.advance(31)
+    check(I:GetMapPing(hal.guid) == nil, "pings disappear after 30 seconds")
+    I.db.settings.mapPings = false
+    H:SendMapPing(1429, 0.3, 0.3)
+    Mock.advance(3)
+    check(I:GetMapPing(hal.guid) == nil, "/gooner pings off: no pings shown")
+    hal:logout()
+    ivy:logout()
+end
 
 print("Stays clear of Blizzard-only actions")
 local clean = true

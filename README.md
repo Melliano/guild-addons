@@ -38,6 +38,7 @@ Do **not** use GitHub's green "Download ZIP" button. It gives the folder the wro
 - `/gooner versions`: see who's on which addon version. `/gooner update` shows the download link.
 - `/gooner news`: turn the guild news pop-ups on or off.
 - `/gooner announce`: also post your own news in guild chat (off by default).
+- **Middle-click the world map** to ping that spot for the guild. Guildies see a pulsing marker with your name for 30 seconds, plus a chat line and a ping sound. `/gooner pings` turns receiving them on or off.
 - `/gooner alerts`: turn the GOONER ZONE alerts on or off.
 - `/gooner weekly`: turn the weekly recap on login on or off.
 - `/gooner interval 30`: change how often your trail is sampled (5-300 seconds).

@@ -19,6 +19,7 @@ Style.lua
 Score.lua
 MapCanvas.lua
 WorldMapOverlay.lua
+MapPing.lua
 UI.lua
 Race.lua
 DeathMap.lua

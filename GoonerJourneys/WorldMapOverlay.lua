@@ -42,6 +42,8 @@ local function translate(fromMap, x, y, toMap)
     return px, py
 end
 
+GJ.TranslateMapPos = translate
+
 local function addDot(x, y, r, g, b, size, scale)
     dotsUsed = dotsUsed + 1
     local t = dots[dotsUsed]
@@ -93,6 +95,7 @@ function GJ:RefreshWorldMapOverlay()
     if not WorldMapFrame or not WorldMapFrame:IsShown() then return end
     if not ensureOverlay() then return end
     clear()
+    if self.RefreshMapPings then self:RefreshMapPings() end -- pings show even with the overlay off
     if not self.db.settings.worldMapOverlay then return end
     local _, scale, shownMap = canvasInfo()
     if not shownMap then return end

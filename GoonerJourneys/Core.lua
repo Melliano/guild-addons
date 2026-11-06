@@ -212,6 +212,9 @@ SlashCmdList.GOONERJOURNEYS = function(input)
         GJ:ShowCurrentRecap()
     elseif cmd == "update" then
         GJ:ShowUpdatePopup()
+    elseif cmd == "pings" then
+        GJ.db.settings.mapPings = not GJ.db.settings.mapPings
+        GJ:Print("Guild map pings", GJ.db.settings.mapPings and "on" or "off")
     elseif cmd == "where" then
         GJ:PrintWhere()
     elseif cmd == "status" then
@@ -234,6 +237,6 @@ SlashCmdList.GOONERJOURNEYS = function(input)
         GJ.db.settings.debug = not GJ.db.settings.debug
         GJ:Print("Debug", GJ.db.settings.debug and "on" or "off")
     else
-        GJ:Print("Commands: /gooner [show | recap | sync | status | where | versions | update | news | announce | alerts | weekly | map | minimap | interval <sec> | debug]")
+        GJ:Print("Commands: /gooner [show | recap | sync | status | where | pings | versions | update | news | announce | alerts | weekly | map | minimap | interval <sec> | debug]")
     end
 end
