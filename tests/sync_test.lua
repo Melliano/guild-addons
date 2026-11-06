@@ -9,7 +9,7 @@ local FILES = {
     "GoonerJourneys/Gear.lua", "GoonerJourneys/Style.lua", "GoonerJourneys/Score.lua", "GoonerJourneys/MapCanvas.lua",
     "GoonerJourneys/WorldMapOverlay.lua", "GoonerJourneys/MapPing.lua", "GoonerJourneys/UI.lua", "GoonerJourneys/Race.lua",
     "GoonerJourneys/DeathMap.lua", "GoonerJourneys/QuestLog.lua",
-    "GoonerJourneys/News.lua", "GoonerJourneys/Recap.lua", "GoonerJourneys/Version.lua", "GoonerJourneys/GoonerZone.lua",
+    "GoonerJourneys/News.lua", "GoonerJourneys/Activity.lua", "GoonerJourneys/Recap.lua", "GoonerJourneys/Version.lua", "GoonerJourneys/GoonerZone.lua",
     "GoonerJourneys/Minimap.lua",
 }
 
@@ -395,13 +395,66 @@ local ok, err = pcall(function()
     B:ToggleUI()
     B.ui.frame:GetScript("OnShow")
     B:SelectMember(alice.guid)
-    for _, tab in ipairs({ "timeline", "stats", "gear", "map", "race", "leaders", "deaths", "quests" }) do B:ShowTab(tab) end
+    for _, tab in ipairs({ "timeline", "stats", "gear", "map", "latest", "race", "leaders", "deaths", "quests" }) do B:ShowTab(tab) end
     B:ShowCurrentRecap()
 end)
 check(rawget(bob.env, "GetItemInfo") == nil and (bob.itemInfoCalls or 0) > 0,
     "gear tab draws items through C_Item when the old GetItemInfo global is gone")
 check(A:Me().gear.ilvl == 10, "average item level read via C_Item")
 check(ok, "UI tabs render: " .. tostring(err))
+
+print("Guild activity feed")
+-- A goon who earns 100 points (Apprentice Gooner) and dies twice in a row
+-- (the second death is a client double-fire and must not show).
+local fid = "Player-1-000000FE"
+local t0 = B:Now() - 600
+local fevs = {}
+for i = 1, 10 do fevs[i] = { t = t0 + i, k = "silly", d = "nightOwl", l = 20 } end
+fevs[11] = { t = t0 + 20, k = "death", d = "Hogger", l = 20 }
+fevs[12] = { t = t0 + 22, k = "death", d = "Hogger", l = 20 }
+B:MergeEvents(fid, 1, fevs)
+local fm = B:GetMember(fid)
+fm.name, fm.guild, fm.class = "Feedy", "Unregistered Hypercam Users", "MAGE"
+
+local feed = B:GuildActivity()
+local sawFeedDeath, sawFeedDing, sawFeedRank, ordered, feedyDeaths = false, false, false, true, 0
+for i, it in ipairs(feed) do
+    if it.m.guid == alice.guid and it.kind == "death" then sawFeedDeath = true end
+    if it.m.guid == alice.guid and it.kind == "level" and it.title:find("level 5") then sawFeedDing = true end
+    if it.m.guid == fid and it.kind == "rank" and it.title:find("Apprentice Gooner") then sawFeedRank = true end
+    if it.m.guid == fid and it.kind == "death" then feedyDeaths = feedyDeaths + 1 end
+    if i > 1 and it.t > feed[i - 1].t then ordered = false end
+end
+check(sawFeedDeath and sawFeedDing, "feed shows Alice's death and her level 5 ding")
+check(sawFeedRank, "feed shows rank-ups")
+check(ordered, "feed is newest first")
+check(feedyDeaths == 1, "doubled deaths aren't in the feed (" .. feedyDeaths .. ")")
+check(#B:GuildActivity(3) == 3, "feed respects its limit")
+B.db.members[fid] = nil
+
+print("Guild and Goons sections")
+local ok3, err3 = pcall(function()
+    B:ShowTab("race")
+    B:SelectMember(alice.guid)
+    B:ShowTab("stats")
+    assert(B.ui.section == "goons", "a goon tab shows the Goons section")
+    B:ShowSection("guild")
+    assert(B.ui.section == "guild" and B.ui.currentTab == "race", "guild reopens on the last guild tab: " .. tostring(B.ui.currentTab))
+    B:ShowTab("deaths")
+    B:ShowSection("goons")
+    assert(B.ui.section == "goons" and B.ui.currentTab == "stats", "goons returns to the last goon tab: " .. tostring(B.ui.currentTab))
+    B:ShowSection("guild")
+    assert(B.ui.currentTab == "deaths", "guild returns to the last guild tab: " .. tostring(B.ui.currentTab))
+    B:SelectMember(carl.guid) -- e.g. clicking a skull or a leaderboard name
+    assert(B.ui.section == "goons" and B.selectedGUID == carl.guid and B.ui.currentTab == "stats",
+        "picking a goon from a guild tab opens them in Goons")
+    B.ui.guildTab = nil
+    B:ShowSection("guild")
+    assert(B.ui.currentTab == "latest", "guild opens on Latest the first time: " .. tostring(B.ui.currentTab))
+    B:ShowTab("bogus")
+    assert(B.ui.currentTab == "timeline", "unknown tab falls back to the timeline")
+end)
+check(ok3, "Guild/Goons sections switch and remember tabs: " .. tostring(err3))
 
 print("Deaths are only counted once")
 do

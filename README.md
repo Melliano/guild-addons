@@ -12,7 +12,9 @@ A Muddy Boots-style journey tracker for the whole guild. Every goon with the add
 - **Gear:** a snapshot of each member's equipped gear, viewable even when they're offline. Hover for tooltips, shift-click to link.
 - **Journey map:** a trail of everywhere they've walked (sampled every 30s), with skulls where they died, plus their live position.
 - **World map:** online goons show up live on your normal world map.
-- **Leaderboards:** most deaths, biggest yapper, critter murderer, most travelled and more.
+- **Two sections:** switch between **Guild** (everyone at once) and **Goons** (one goon's journey) in the window's header.
+- **Latest:** a guild activity feed, newest first and grouped by day: dings, deaths, first boss kills, epics, silly milestones and rank-ups, so you see what happened while you were offline. Click an entry to open that goon.
+- **Leaderboards:** most deaths, biggest yapper, critter murderer, most travelled and more. Click a name to open that goon.
 - **Guild death map:** every goon's deaths on one map, zone by zone, with the zone's deadliest killer. Hover a skull to see who died, to what and at what level; click it to open their journey.
 - **Guild quest log:** every quest a goon has picked up, with who's on it now, who has completed it and who dropped it. Filter to in-progress or completed, or search by quest or zone. Quests you finished before installing the addon are filled in once a guildie picks them up.
 - **Guild news pop-ups:** cards slide in when a goon dings, dies, gets a first boss kill or an epic, unlocks a silly milestone or ranks up. Click one to open their journey.
@@ -31,6 +33,7 @@ Do **not** use GitHub's green "Download ZIP" button. It gives the folder the wro
 
 ### Usage
 - Click the minimap button or type `/gooner` (also `/gj` or `/journey`).
+- The **Reload** button in the window's header (or `/gooner reload`) does a `/reload`, handy after installing an update.
 - Right-click the minimap button to toggle guildies on the world map.
 - `/gooner sync`: ask online guildies for any data you're missing (it also happens automatically every few minutes).
 - `/gooner status`: show what's been sent and received, and from whom. Use this first if a guildie isn't showing up.
