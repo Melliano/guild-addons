@@ -10,12 +10,29 @@ local SIDEBAR_W = 236
 local ROW_H = 46
 local PAD = 20
 local CONTENT_W = WIDTH - SIDEBAR_W - PAD * 2
+local GUILD_W = WIDTH - PAD * 2       -- the Guild section uses the full width
 
 local ui = {}
 GJ.ui = ui
 
--- Tabs about the whole guild rather than the selected goon.
-local GUILD_TABS = { leaders = true, deaths = true, quests = true }
+-- The window has two sections, picked in the header bar:
+--   Goons: the roster plus tabs about the selected goon.
+--   Guild: full-width tabs about everyone at once.
+local GOON_TAB_DEFS = {
+    { "timeline", "Timeline" },
+    { "stats", "Stats" },
+    { "gear", "Gear" },
+    { "map", "Journey Map" },
+}
+local GUILD_TAB_DEFS = {
+    { "latest", "Latest" },
+    { "leaders", "Leaderboards" },
+    { "race", "Race to 60" },
+    { "deaths", "Death Map" },
+    { "quests", "Quests" },
+}
+local GUILD_TABS = {}
+for _, def in ipairs(GUILD_TAB_DEFS) do GUILD_TABS[def[1]] = true end
 
 local function fmtNum(n)
     if type(n) ~= "number" then return tostring(n or "-") end
@@ -91,9 +108,34 @@ local function createMain()
     chl:SetAllPoints()
     close:SetScript("OnClick", function() f:Hide() end)
 
+    -- Reload button: same as typing /reload.
+    local reload = S.Button(header, "Reload", 70, 26)
+    reload:SetPoint("RIGHT", close, "LEFT", -8, 0)
+    reload:SetScript("OnClick", function() ReloadUI() end)
+    reload:SetScript("OnEnter", function(btn)
+        GameTooltip:SetOwner(btn, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Reload UI")
+        GameTooltip:AddLine("Same as typing /reload. Handy after installing an update.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    reload:SetScript("OnLeave", GameTooltip_Hide)
+    ui.reloadBtn = reload
+
     ui.status = S.Text(header, 11, C.faint)
-    ui.status:SetPoint("RIGHT", close, "LEFT", -12, 0)
+    ui.status:SetPoint("RIGHT", reload, "LEFT", -12, 0)
     ui.status:SetJustifyH("RIGHT")
+
+    -- Section switcher (centre of the header).
+    ui.sectionButtons = {}
+    local sections = { { "guild", "Guild" }, { "goons", "Goons" } }
+    local segW = 96
+    for i, def in ipairs(sections) do
+        local b = S.Button(header, def[2], segW, 28)
+        b:SetPoint("CENTER", header, "CENTER", (i - 1.5) * (segW + 4), 0)
+        b.key = def[1]
+        b:SetScript("OnClick", function() GJ:ShowSection(def[1]) end)
+        ui.sectionButtons[#ui.sectionButtons + 1] = b
+    end
 
     local upd = S.Button(header, "Update available", 150, 26, "primary")
     upd:SetPoint("RIGHT", ui.status, "LEFT", -12, 0)
@@ -113,6 +155,7 @@ local function createRoster(f)
     side:SetPoint("TOPLEFT", 1, -HEADER_H - 1)
     side:SetPoint("BOTTOMLEFT", 1, 1)
     side:SetWidth(SIDEBAR_W)
+    ui.side = side
     local bg = S.Fill(side, C.sidebar, "BACKGROUND")
     bg:SetAllPoints()
     local line = S.Fill(side, C.border, "ARTWORK")
@@ -217,17 +260,6 @@ end
 ---------------------------------------------------------------------------
 -- Profile header, quick stats and tabs
 ---------------------------------------------------------------------------
-local TABS = {
-    { "timeline", "Timeline" },
-    { "stats", "Stats" },
-    { "gear", "Gear" },
-    { "map", "Journey Map" },
-    { "race", "Race to 60" },
-    { "leaders", "Leaderboards" },
-    { "deaths", "Death Map" },
-    { "quests", "Quests" },
-}
-
 local QUICK = {
     { "LEVEL", function(m, s) return m.level or "-" end },
     { "GOONER SCORE", function(m, s) return fmtNum(GJ:Score(m)) end },
@@ -287,12 +319,12 @@ local function createDetail(f)
         ui.quick[i] = q
     end
 
-    ui.tabStrip = S.Tabs(d, TABS, function(key) GJ:ShowTab(key) end, CONTENT_W)
+    ui.tabStrip = S.Tabs(d, GOON_TAB_DEFS, function(key) GJ:ShowTab(key) end, CONTENT_W)
     ui.tabStrip:SetPoint("TOPLEFT", 0, -130)
     ui.tabStrip:SetPoint("TOPRIGHT", 0, -130)
 
-    ui.pages = {}
-    for _, def in ipairs(TABS) do
+    ui.pages = ui.pages or {}
+    for _, def in ipairs(GOON_TAB_DEFS) do
         local p = CreateFrame("Frame", nil, d)
         p:SetPoint("TOPLEFT", 0, -172)
         p:SetPoint("BOTTOMRIGHT")
@@ -300,6 +332,29 @@ local function createDetail(f)
         ui.pages[def[1]] = p
     end
     ui.pageH = HEIGHT - HEADER_H - 16 - PAD - 172
+end
+
+-- Guild section: full width, its own tab strip, no roster or profile.
+local function createGuild(f)
+    local g = CreateFrame("Frame", nil, f)
+    g:SetPoint("TOPLEFT", PAD, -HEADER_H - 16)
+    g:SetPoint("BOTTOMRIGHT", -PAD, PAD)
+    g:Hide()
+    ui.guild = g
+
+    ui.guildStrip = S.Tabs(g, GUILD_TAB_DEFS, function(key) GJ:ShowTab(key) end, GUILD_W)
+    ui.guildStrip:SetPoint("TOPLEFT", 0, 0)
+    ui.guildStrip:SetPoint("TOPRIGHT", 0, 0)
+
+    ui.pages = ui.pages or {}
+    for _, def in ipairs(GUILD_TAB_DEFS) do
+        local p = CreateFrame("Frame", nil, g)
+        p:SetPoint("TOPLEFT", 0, -42)
+        p:SetPoint("BOTTOMRIGHT")
+        p:Hide()
+        ui.pages[def[1]] = p
+    end
+    ui.guildPageH = HEIGHT - HEADER_H - 16 - PAD - 42
 end
 
 ---------------------------------------------------------------------------
@@ -874,11 +929,11 @@ local function createLeaders()
     local page = ui.pages.leaders
     local holder = CreateFrame("Frame", nil, page)
     holder:SetAllPoints()
-    local scroll, child = S.Scroll(holder, CONTENT_W - 12)
+    local scroll, child = S.Scroll(holder, GUILD_W - 12)
     ui.leadersScroll, ui.leadersChild = scroll, child
     ui.boards = {}
-    local cols, gap = 2, 10
-    local w = (CONTENT_W - 12 - gap) / cols
+    local cols, gap = 3, 10
+    local w = (GUILD_W - 12 - (cols - 1) * gap) / cols
     local h = 118
     for i, def in ipairs(BOARDS) do
         local col = (i - 1) % cols
@@ -910,7 +965,14 @@ local function createLeaders()
             local val = S.Text(card, 13, C.muted, S.FONT)
             val:SetPoint("RIGHT", card, "TOPRIGHT", -14, -45 - (j - 1) * 25)
             val:SetJustifyH("RIGHT")
-            lines[j] = { badge = badge, num = num, name = name, val = val }
+            -- Click a name to open that goon.
+            local btn = CreateFrame("Button", nil, card)
+            btn:SetPoint("TOPLEFT", badge, "TOPLEFT", -4, 3)
+            btn:SetPoint("BOTTOMRIGHT", card, "TOPRIGHT", -8, -57 - (j - 1) * 25)
+            local hl = S.Fill(btn, { 1, 1, 1, 0.05 }, "HIGHLIGHT")
+            hl:SetAllPoints()
+            btn:SetScript("OnClick", function(b) if b.guid then GJ:SelectMember(b.guid) end end)
+            lines[j] = { badge = badge, num = num, name = name, val = val, btn = btn }
         end
         ui.boards[i] = lines
     end
@@ -935,7 +997,11 @@ function GJ:RefreshLeaders()
                 line.name:SetTextColor(col[1], col[2], col[3])
                 line.val:SetText(fmtNum(e[2]))
                 line.badge:SetAlpha(1) line.num:SetAlpha(1)
+                line.btn.guid = e[1].guid
+                line.btn:Show()
             else
+                line.btn.guid = nil
+                line.btn:Hide()
                 line.name:SetText(j == 1 and "Nobody yet" or "")
                 line.name:SetTextColor(unpack(C.faint))
                 line.val:SetText("")
@@ -950,11 +1016,38 @@ end
 -- Selection and refresh
 ---------------------------------------------------------------------------
 function GJ:ShowTab(tab)
+    if not ui.pages[tab] then tab = "timeline" end
+    local guild = GUILD_TABS[tab] and true or false
     ui.currentTab = tab
+    ui.section = guild and "guild" or "goons"
+    if guild then ui.guildTab = tab else ui.goonTab = tab end
+
+    ui.guild:SetShown(guild)
+    ui.side:SetShown(not guild)
+    ui.detail:SetShown(not guild)
+    for _, b in ipairs(ui.sectionButtons) do
+        local active = b.key == ui.section
+        b.bgTex:SetVertexColor(unpack(active and C.cardHi or C.card))
+        b.borderTex:SetVertexColor(unpack(active and C.accent or C.border))
+        b.label:SetTextColor(unpack(active and C.text or C.muted))
+    end
     for key, page in pairs(ui.pages) do page:SetShown(key == tab) end
-    ui.tabStrip:SetActive(tab)
-    self:RefreshRoster()
+    if guild then ui.guildStrip:SetActive(tab) else ui.tabStrip:SetActive(tab) end
+
+    if not guild then
+        self:RefreshHeader()
+        self:RefreshRoster()
+    end
     self:RefreshCurrentTab()
+end
+
+-- "guild" or "goons": go back to the tab you were last on in that section.
+function GJ:ShowSection(section)
+    if section == "guild" then
+        self:ShowTab(ui.guildTab or "latest")
+    else
+        self:ShowTab(ui.goonTab or "timeline")
+    end
 end
 
 function GJ:RefreshCurrentTab()
@@ -964,6 +1057,7 @@ function GJ:RefreshCurrentTab()
     elseif tab == "gear" then self:RefreshGear()
     elseif tab == "map" then self:RefreshMap(true)
     elseif tab == "race" then self:RefreshRace()
+    elseif tab == "latest" then self:RefreshActivity()
     elseif tab == "leaders" then self:RefreshLeaders()
     elseif tab == "deaths" then self:RefreshDeathMap()
     elseif tab == "quests" then self:RefreshQuests() end
@@ -1004,11 +1098,11 @@ function GJ:RefreshHeader()
     end
 end
 
+-- Picking a goon (roster, a skull, a leaderboard name, a news card) always
+-- lands in the Goons section on the last goon tab you used.
 function GJ:SelectMember(guid)
     self.selectedGUID = guid
-    if GUILD_TABS[ui.currentTab] then ui.currentTab = "timeline" end
-    self:RefreshHeader()
-    self:ShowTab(ui.currentTab or "timeline")
+    self:ShowTab(ui.goonTab or "timeline")
     if WorldMapFrame and WorldMapFrame:IsShown() then self:RefreshWorldMapOverlay() end
 end
 
@@ -1028,17 +1122,21 @@ local function build()
     local f = createMain()
     createRoster(f)
     createDetail(f)
+    createGuild(f)
     createTimeline()
     createStats()
     createGear()
     createMap()
     createLeaders()
-    GJ:CreateRacePage(ui.pages.race, CONTENT_W, ui.pageH)
-    GJ:CreateDeathMapPage(ui.pages.deaths, CONTENT_W, ui.pageH)
-    GJ:CreateQuestPage(ui.pages.quests, CONTENT_W, ui.pageH)
+    GJ:CreateActivityPage(ui.pages.latest, GUILD_W, ui.guildPageH)
+    GJ:CreateRacePage(ui.pages.race, GUILD_W, ui.guildPageH)
+    GJ:CreateDeathMapPage(ui.pages.deaths, GUILD_W, ui.guildPageH)
+    GJ:CreateQuestPage(ui.pages.quests, GUILD_W, ui.guildPageH)
     f:SetScript("OnShow", function()
         if not GJ.selectedGUID then GJ.selectedGUID = GJ:PlayerGUID() end
-        GJ:SelectMember(GJ.selectedGUID)
+        -- Reopen wherever you left off (your own journey the first time).
+        GJ:ShowTab(ui.currentTab or "timeline")
+        if WorldMapFrame and WorldMapFrame:IsShown() then GJ:RefreshWorldMapOverlay() end
         GJ:RefreshStatus()
     end)
     local acc = 0

@@ -189,6 +189,8 @@ SlashCmdList.GOONERJOURNEYS = function(input)
     cmd = cmd:lower()
     if cmd == "" or cmd == "show" then
         GJ:ToggleUI()
+    elseif cmd == "reload" then
+        ReloadUI()
     elseif cmd == "sync" then
         GJ:BroadcastDigest(true)
         GJ:Print("Asked the guild for fresh journeys.")
@@ -237,6 +239,6 @@ SlashCmdList.GOONERJOURNEYS = function(input)
         GJ.db.settings.debug = not GJ.db.settings.debug
         GJ:Print("Debug", GJ.db.settings.debug and "on" or "off")
     else
-        GJ:Print("Commands: /gooner [show | recap | sync | status | where | pings | versions | update | news | announce | alerts | weekly | map | minimap | interval <sec> | debug]")
+        GJ:Print("Commands: /gooner [show | reload | recap | sync | status | where | pings | versions | update | news | announce | alerts | weekly | map | minimap | interval <sec> | debug]")
     end
 end

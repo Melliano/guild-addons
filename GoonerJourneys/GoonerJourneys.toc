@@ -25,6 +25,7 @@ Race.lua
 DeathMap.lua
 QuestLog.lua
 News.lua
+Activity.lua
 Recap.lua
 Version.lua
 GoonerZone.lua
