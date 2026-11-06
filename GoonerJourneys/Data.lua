@@ -10,7 +10,9 @@ local DEFAULT_SETTINGS = {
     trailInterval = 30,       -- seconds between trail samples
     worldMapOverlay = true,   -- draw guildies + trails on the world map
     toasts = true,            -- guild news pop-ups
-    mapPings = true,          -- show guildies' middle-click pings on the world map
+    mapPings = true,
+    questSort = "level",      -- guild quests tab: "level", "name" or "goons"
+    questCollapsed = {},      -- guild quests tab: [zone] = true when folded away          -- show guildies' middle-click pings on the world map
     announce = false,         -- post your own news in guild chat
     weeklyRecap = true,
     goonerAlerts = true,      -- GOONER ZONE DETECTED banner       -- show last week's recap on first login of the week

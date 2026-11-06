@@ -347,6 +347,57 @@ check(questPushes > 0, "quest data is sent to guildies who understand it")
 B.PushQuests = origPushQuests
 Mock.advance(120)
 
+print("Guild quests: grouped by area, filters and sorting")
+do
+    local me = { guid = bob.guid, name = "Bob" }
+    local al = { guid = alice.guid, name = "Alice" }
+    local ca = { guid = carl.guid, name = "Carl" }
+    local fake = {
+        { id = 1, n = "Kobold Candles", lv = 7, z = "Elwynn Forest", active = { ca }, done = {}, dropped = {} },
+        { id = 2, n = "A Fishy Peril", lv = 5, z = "Elwynn Forest", active = {}, done = { al, ca }, dropped = {} },
+        { id = 3, n = "The Defias Brotherhood", lv = 14, z = "Westfall", active = { me, al }, done = {}, dropped = {} },
+        { id = 4, n = "Red Linen Goods", lv = 10, z = "Westfall", active = {}, done = {}, dropped = { me } },
+        { id = 5, n = "Mystery Note", z = nil, active = { al }, done = {}, dropped = {} },
+        { id = 6, n = "Wanted: Hogger", lv = 11, z = "Elwynn Forest", active = {}, done = { me }, dropped = {} },
+    }
+    local orig = B.GuildQuests
+    B.GuildQuests = function() return fake end
+    local function zones(groups)
+        local t = {}
+        for _, g in ipairs(groups) do t[#t + 1] = g.zone .. "(" .. #g.quests .. ")" end
+        return table.concat(t, " ")
+    end
+    local function names(g)
+        local t = {}
+        for _, q in ipairs(g.quests) do t[#t + 1] = q.n end
+        return table.concat(t, ", ")
+    end
+    local g, total = B:QuestView({})
+    check(total == 6 and zones(g) == "Elwynn Forest(3) Westfall(2) Other(1)",
+        "grouped by area, lowest-level area first, no-area quests under Other: " .. zones(g))
+    check(names(g[1]) == "A Fishy Peril, Kobold Candles, Wanted: Hogger", "quests sorted by level inside an area")
+    check(g[1].minLv == 5 and g[1].maxLv == 11 and g[1].inProgress == 1 and g[1].completed == 2, "area header counts and level range")
+    g = B:QuestView({ sort = "name" })
+    check(zones(g) == "Elwynn Forest(3) Westfall(2) Other(1)" and names(g[2]) == "Red Linen Goods, The Defias Brotherhood", "sort by name")
+    g = B:QuestView({ sort = "goons" })
+    check(g[1].zone == "Elwynn Forest" and g[1].quests[1].n == "A Fishy Peril", "sort by most goons")
+    g, total = B:QuestView({ status = "active" })
+    check(total == 3 and zones(g) == "Elwynn Forest(1) Westfall(1) Other(1)", "filter: in progress")
+    g, total = B:QuestView({ status = "done" })
+    check(total == 2, "filter: completed")
+    g, total = B:QuestView({ status = "dropped" })
+    check(total == 1 and g[1].quests[1].n == "Red Linen Goods", "filter: dropped")
+    g, total = B:QuestView({ who = bob.guid })
+    check(total == 3, "filter: one goon (anything they're on, finished or dropped)")
+    g, total = B:QuestView({ who = alice.guid, status = "active" })
+    check(total == 2, "filter: one goon + in progress")
+    g, total = B:QuestView({ near = 12 })
+    check(total == 5, "filter: near my level (within 5, plus quests with no level; the level 5 quest is out)")
+    g, total = B:QuestView({ search = "westfall" })
+    check(total == 2 and #g == 1, "search still works across areas")
+    B.GuildQuests = orig
+end
+
 print("World map pings")
 do
     local hal = Mock.newClient({ name = "Hal", guid = "Player-1-00000011", class = "MAGE", level = 20 })
@@ -396,6 +447,13 @@ local ok, err = pcall(function()
     B.ui.frame:GetScript("OnShow")
     B:SelectMember(alice.guid)
     for _, tab in ipairs({ "timeline", "stats", "gear", "map", "latest", "race", "leaders", "deaths", "quests" }) do B:ShowTab(tab) end
+    -- Guild quests with a folded area and a different sort.
+    B.db.settings.questCollapsed["Elwynn Forest"] = true
+    B.db.settings.questSort = "goons"
+    B:ShowTab("quests")
+    B.db.settings.questCollapsed = {}
+    B.db.settings.questSort = "level"
+    B:RefreshQuests()
     B:ShowCurrentRecap()
 end)
 check(rawget(bob.env, "GetItemInfo") == nil and (bob.itemInfoCalls or 0) > 0,
