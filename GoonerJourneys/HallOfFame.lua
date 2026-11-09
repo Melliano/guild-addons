@@ -2,9 +2,12 @@
 -- up once for every guildie (with a fanfare) the first time they log in on
 -- a version that has it, and stays in the Guild > Hall of Fame tab.
 --
+-- The goons named on an entry are shown as 3D character models on a
+-- stage: their race, gender and last synced gear (your own character
+-- exactly as you look).
+--
 -- To add one: add an entry at the TOP of GJ.HALL_OF_FAME below (a new
--- unique id), optionally drop a photo in media/ (see media/README.md),
--- then release.
+-- unique id), then release.
 local _, GJ = ...
 local S = GJ.Style
 local C = S.C
@@ -23,8 +26,6 @@ GJ.HALL_OF_FAME = {
             .. "Their names are now carved into the walls of the Gooner Hall forever.",
         members = { "Seemour", "Orianna", "Rook", "Rasputin" },
         icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
-        -- image = "Interface\\AddOns\\GoonerJourneys\\media\\hall_of_thanes",
-        -- imageW = 512, imageH = 256,
     },
 }
 
@@ -70,81 +71,151 @@ local function fanfare()
 end
 
 ---------------------------------------------------------------------------
--- Member cards (used when there's no photo, and under the photo)
+-- The stage: one 3D character model per goon
 ---------------------------------------------------------------------------
-local function memberCard(parent, w, h)
-    local card = CreateFrame("Button", nil, parent)
-    card:SetSize(w, h)
-    S.Panel(card, C.card, C.border)
-    local hl = S.Fill(card, { 1, 1, 1, 0.05 }, "HIGHLIGHT")
-    hl:SetAllPoints()
-    card.ring = S.Circle(card, h - 14, GOLD, "ARTWORK")
-    card.ring:SetPoint("LEFT", 8, 0)
-    card.icon = card:CreateTexture(nil, "OVERLAY")
-    card.icon:SetSize(h - 20, h - 20)
-    card.icon:SetPoint("CENTER", card.ring)
-    S.RoundMask(card, card.icon)
-    card.name = S.Text(card, 13, C.text, S.FONT)
-    card.name:SetPoint("TOPLEFT", card.ring, "TOPRIGHT", 8, -3)
-    card.name:SetWidth(w - h - 6)
-    card.sub = S.Text(card, 10, C.muted)
-    card.sub:SetPoint("BOTTOMLEFT", card.ring, "BOTTOMRIGHT", 8, 3)
-    card.sub:SetWidth(w - h - 6)
-    card:SetScript("OnClick", function(self)
+-- Race file name ("NightElf") -> race ID for SetCustomRace. Built from the
+-- game so new races (Skyborne) work; classic IDs as a fallback.
+local RACE_IDS
+local function raceID(raceFile)
+    if not raceFile then return nil end
+    if not RACE_IDS then
+        RACE_IDS = { Human = 1, Orc = 2, Dwarf = 3, NightElf = 4, Scourge = 5, Tauren = 6, Gnome = 7, Troll = 8 }
+        if C_CreatureInfo and C_CreatureInfo.GetRaceInfo then
+            for id = 1, 120 do
+                local ok, info = pcall(C_CreatureInfo.GetRaceInfo, id)
+                if ok and info and info.clientFileString then RACE_IDS[info.clientFileString] = id end
+            end
+        end
+    end
+    return RACE_IDS[raceFile]
+end
+
+-- Gear slots that show on a character (not neck, rings or trinkets).
+local VISIBLE_SLOTS = { 1, 3, 4, 5, 6, 7, 8, 9, 10, 15, 16, 17, 18, 19 }
+
+-- Dress a DressUpModel as this goon. Returns true if it worked.
+function GJ:DressModel(model, m)
+    if not m then return false end
+    local ok = pcall(function()
+        if self:IsMe(m.guid) then
+            model:SetUnit("player")
+            return
+        end
+        local id = raceID(m.race)
+        if not id or not model.SetCustomRace then error("no race") end
+        -- UnitSex: 2 = male, 3 = female; SetCustomRace wants 0 / 1.
+        model:SetCustomRace(id, (m.sex == 3) and 1 or 0)
+        if model.Undress then model:Undress() end
+        local gear = m.gear or {}
+        for _, slot in ipairs(VISIBLE_SLOTS) do
+            if type(gear[slot]) == "string" then model:TryOn(gear[slot]) end
+        end
+    end)
+    return ok
+end
+
+local function stageSlot(parent)
+    local slot = CreateFrame("Button", nil, parent)
+    slot.floor = S.Circle(slot, 80, { 1, 0.82, 0.25, 0.22 }, "BACKGROUND")
+    slot.floor:SetPoint("BOTTOM", 0, 14)
+    slot.model = CreateFrame("DressUpModel", nil, slot)
+    slot.model:SetPoint("TOPLEFT", 0, 0)
+    slot.model:SetPoint("BOTTOMRIGHT", 0, 18)
+    -- Fallback when a model can't be built: the class icon.
+    slot.icon = slot:CreateTexture(nil, "ARTWORK")
+    slot.icon:SetSize(56, 56)
+    slot.icon:SetPoint("CENTER", 0, 10)
+    S.RoundMask(slot, slot.icon)
+    slot.name = S.Text(slot, 13, C.text, S.FONT)
+    slot.name:SetPoint("BOTTOM", 0, 0)
+    slot.name:SetJustifyH("CENTER")
+    slot:SetScript("OnClick", function(self)
         if self.guid then
             if GJ.hallPopup then GJ.hallPopup:Hide() end
             if not (GJ.ui.frame and GJ.ui.frame:IsShown()) then GJ:ToggleUI() end
             GJ:SelectMember(self.guid)
         end
     end)
-    return card
+    slot:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine(self.title or "")
+        if self.sub then GameTooltip:AddLine(self.sub, 1, 1, 1) end
+        if self.guid then GameTooltip:AddLine("Click to open their journey", 0.6, 0.6, 0.6) end
+        GameTooltip:Show()
+    end)
+    slot:SetScript("OnLeave", GameTooltip_Hide)
+    return slot
 end
 
-local function fillMemberCard(card, name)
-    local m = GJ:FindMemberByName(name)
-    card.guid = m and m.guid or nil
-    card.name:SetText(name)
-    if m then
-        local r, g, b = GJ:ClassColor(m.class)
-        card.name:SetTextColor(r, g, b)
-        card.ring:SetVertexColor(r, g, b, 1)
-        card.icon:SetTexture(S.ClassIcon(m.class))
-        card.sub:SetText(("Level %d %s"):format(m.level or 0, S.ClassName(m.class)))
-    else
-        card.name:SetTextColor(unpack(C.text))
-        card.ring:SetVertexColor(GOLD[1], GOLD[2], GOLD[3], 1)
-        card.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-        card.sub:SetText("Legend")
-    end
-end
+-- Fill `stage` with one model per name, fanned slightly towards the middle.
+local stageSlots = setmetatable({}, { __mode = "k" })
 
--- Lay out member cards in a row across `width`.
-local function layoutMembers(holder, pool, names, width, cardH)
+local function layoutStage(stage, names, width, height)
+    local slots = stageSlots[stage]
+    if not slots then slots = {} stageSlots[stage] = slots end
     local n = math.max(1, #names)
-    local gap = 8
-    local w = (width - (n - 1) * gap) / n
+    local w = width / n
     for i, name in ipairs(names) do
-        local card = pool[i]
-        if not card then
-            card = memberCard(holder, w, cardH)
-            pool[i] = card
+        local slot = slots[i]
+        if not slot then
+            slot = stageSlot(stage)
+            slots[i] = slot
         end
-        card:SetSize(w, cardH)
-        card.name:SetWidth(w - cardH - 6)
-        card.sub:SetWidth(w - cardH - 6)
-        card:ClearAllPoints()
-        card:SetPoint("TOPLEFT", holder, "TOPLEFT", (i - 1) * (w + gap), 0)
-        fillMemberCard(card, name)
-        card:Show()
+        slot:SetSize(w, height)
+        slot:ClearAllPoints()
+        slot:SetPoint("TOPLEFT", stage, "TOPLEFT", (i - 1) * w, 0)
+        slot:Show()
+        local m = GJ:FindMemberByName(name)
+        slot.guid = m and m.guid or nil
+        slot.name:SetText(name)
+        if m then
+            local r, g, b = GJ:ClassColor(m.class)
+            slot.name:SetTextColor(r, g, b)
+            slot.title = GJ:ColoredName(m)
+            slot.sub = ("Level %d %s %s"):format(m.level or 0, S.Pretty(m.race), S.ClassName(m.class))
+        else
+            slot.name:SetTextColor(unpack(C.text))
+            slot.title, slot.sub = name, "Legend"
+        end
+        slot.model:Show()
+        local dressed = GJ:DressModel(slot.model, m)
+        if dressed then
+            -- Fan out: left half turns right, right half turns left.
+            local facing = ((i - (n + 1) / 2) / n) * -0.9
+            pcall(slot.model.SetFacing, slot.model, facing)
+            slot.icon:Hide()
+        else
+            slot.model:Hide()
+            slot.icon:SetTexture(m and S.ClassIcon(m.class) or "Interface\\Icons\\INV_Misc_QuestionMark")
+            slot.icon:Show()
+        end
     end
-    for i = #names + 1, #pool do pool[i]:Hide() end
+    for i = #names + 1, #slots do slots[i]:Hide() end
+end
+
+local function createStage(parent, width, height)
+    local stage = CreateFrame("Frame", nil, parent)
+    stage:SetSize(width, height)
+    S.Panel(stage, { 0.05, 0.045, 0.035, 1 }, { GOLD[1], GOLD[2], GOLD[3], 0.6 })
+    -- Warm spotlight glow from above.
+    local glow = stage:CreateTexture(nil, "BACKGROUND", nil, -6)
+    glow:SetTexture(S.WHITE)
+    glow:SetPoint("TOPLEFT", 1, -1)
+    glow:SetPoint("BOTTOMRIGHT", -1, 1)
+    if CreateColor and glow.SetGradient then
+        pcall(glow.SetGradient, glow, "VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(GOLD[1], GOLD[2], GOLD[3], 0.18))
+    else
+        glow:SetVertexColor(0, 0, 0, 0)
+    end
+    stage.width, stage.height = width, height
+    return stage
 end
 
 ---------------------------------------------------------------------------
 -- The induction popup
 ---------------------------------------------------------------------------
-local POP_W, POP_H = 580, 500
-local PHOTO_W, PHOTO_H = POP_W - 44, 230
+local POP_W, POP_H = 620, 500
+local STAGE_W, STAGE_H = POP_W - 44, 260
 
 local function buildPopup()
     local f = CreateFrame("Frame", "GoonerJourneysHallOfFame", UIParent)
@@ -178,36 +249,11 @@ local function buildPopup()
     f.headline:SetWidth(POP_W - 44)
     f.headline:SetWordWrap(true)
 
-    -- Photo frame (shown when the entry has an image).
-    f.photo = CreateFrame("Frame", nil, f)
-    f.photo:SetSize(PHOTO_W, PHOTO_H)
-    f.photo:SetPoint("TOP", 0, -128)
-    S.Panel(f.photo, { 0, 0, 0, 1 }, GOLD)
-    f.photo.tex = f.photo:CreateTexture(nil, "ARTWORK")
-    f.photo.tex:SetPoint("TOPLEFT", 2, -2)
-    f.photo.tex:SetPoint("BOTTOMRIGHT", -2, 2)
-
-    -- Big trophy (shown when there's no photo).
-    f.trophy = CreateFrame("Frame", nil, f)
-    f.trophy:SetSize(PHOTO_W, PHOTO_H)
-    f.trophy:SetPoint("TOP", 0, -128)
-    f.trophy.glow = S.Circle(f.trophy, 170, { GOLD[1], GOLD[2], GOLD[3], 0.25 }, "BACKGROUND")
-    f.trophy.glow:SetPoint("CENTER", 0, 10)
-    S.Pulse(f.trophy.glow, 0.85, 1.15, 2.2)
-    f.trophy.ring = S.Circle(f.trophy, 130, GOLD, "ARTWORK")
-    f.trophy.ring:SetPoint("CENTER", 0, 10)
-    f.trophy.icon = f.trophy:CreateTexture(nil, "OVERLAY")
-    f.trophy.icon:SetSize(120, 120)
-    f.trophy.icon:SetPoint("CENTER", f.trophy.ring)
-    S.RoundMask(f.trophy, f.trophy.icon)
-
-    f.members = CreateFrame("Frame", nil, f)
-    f.members:SetSize(POP_W - 44, 50)
-    f.members:SetPoint("TOP", f.photo, "BOTTOM", 0, -12)
-    f.memberCards = {}
+    f.stage = createStage(f, STAGE_W, STAGE_H)
+    f.stage:SetPoint("TOP", 0, -128)
 
     f.text = S.Text(f, 12, C.muted)
-    f.text:SetPoint("TOP", f.members, "BOTTOM", 0, -12)
+    f.text:SetPoint("TOP", f.stage, "BOTTOM", 0, -14)
     f.text:SetWidth(POP_W - 60)
     f.text:SetJustifyH("CENTER")
     f.text:SetWordWrap(true)
@@ -244,20 +290,10 @@ function GJ:ShowHallOfFame(entry)
     f.kicker:SetText(entry.kicker or "HALL OF FAME")
     f.title:SetText(entry.title or "")
     f.headline:SetText(("%s %s"):format(self:HallNames(entry), entry.headline or ""))
-    if entry.image then
-        f.photo.tex:SetTexture(entry.image)
-        f.photo.tex:SetTexCoord(0, 1, 0, 1)
-        f.photo:Show()
-        f.trophy:Hide()
-    else
-        f.trophy.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_Head_Dragon_01")
-        f.trophy:Show()
-        f.photo:Hide()
-    end
-    layoutMembers(f.members, f.memberCards, entry.members or {}, POP_W - 44, 50)
+    f:Show()
+    layoutStage(f.stage, entry.members or {}, STAGE_W - 2, STAGE_H - 4)
     f.text:SetText(entry.text or "")
     f.date:SetText(entry.t and date("%d %b %Y", entry.t) or "")
-    f:Show()
     fanfare()
 end
 
@@ -289,7 +325,8 @@ end)
 -- Guild > Hall of Fame tab
 ---------------------------------------------------------------------------
 local tab = {}
-local CARD_H_PHOTO, CARD_H = 330, 168
+local CARD_H = 330
+local TAB_STAGE_H = 190
 
 function GJ:CreateHallOfFamePage(parent, width, height)
     tab.width = width
@@ -327,12 +364,8 @@ local function entryCard(i)
     card.headline:SetPoint("TOPLEFT", 16, -66)
     card.headline:SetWidth(w - 32)
     card.headline:SetWordWrap(true)
-    card.photo = card:CreateTexture(nil, "ARTWORK")
-    card.photo:SetSize(320, 160)
-    card.photo:SetPoint("TOPLEFT", 16, -92)
-    card.members = CreateFrame("Frame", nil, card)
-    card.members:SetSize(w - 32, 46)
-    card.memberCards = {}
+    card.stage = createStage(card, w - 32, TAB_STAGE_H)
+    card.stage:SetPoint("TOPLEFT", 16, -92)
     card.replay = S.Button(card, "Replay", 80, 24)
     card.replay:SetPoint("BOTTOMRIGHT", -14, 12)
     tab.cards[i] = card
@@ -351,19 +384,8 @@ function GJ:RefreshHallOfFame()
         card.title:SetText(entry.title or "")
         card.date:SetText(entry.t and date("%d %b %Y", entry.t) or "")
         card.headline:SetText(("%s %s"):format(self:HallNames(entry), entry.headline or ""))
-        local h
-        card.members:ClearAllPoints()
-        if entry.image then
-            card.photo:SetTexture(entry.image)
-            card.photo:Show()
-            card.members:SetPoint("TOPLEFT", 16, -262)
-            h = CARD_H_PHOTO
-        else
-            card.photo:Hide()
-            card.members:SetPoint("TOPLEFT", 16, -94)
-            h = CARD_H
-        end
-        layoutMembers(card.members, card.memberCards, entry.members or {}, tab.width - 46, 46)
+        local h = CARD_H
+        layoutStage(card.stage, entry.members or {}, tab.width - 48, TAB_STAGE_H - 4)
         card.replay:SetScript("OnClick", function() GJ:ShowHallOfFame(entry) end)
         card:SetHeight(h)
         card:Show()

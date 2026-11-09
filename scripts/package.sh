@@ -12,11 +12,6 @@ trap 'rm -rf "$STAGE"' EXIT
 
 mkdir -p "$OUT" "$STAGE/GoonerJourneys"
 cp GoonerJourneys/*.lua GoonerJourneys/*.toc "$STAGE/GoonerJourneys/"
-# Images (Hall of Fame photos etc.)
-if compgen -G "GoonerJourneys/media/*.tga" > /dev/null || compgen -G "GoonerJourneys/media/*.blp" > /dev/null; then
-    mkdir -p "$STAGE/GoonerJourneys/media"
-    cp GoonerJourneys/media/*.tga GoonerJourneys/media/*.blp "$STAGE/GoonerJourneys/media/" 2>/dev/null || true
-fi
 sed -i.bak "s/@project-version@/${VERSION}/" "$STAGE/GoonerJourneys/GoonerJourneys.toc"
 rm -f "$STAGE/GoonerJourneys/"*.bak
 

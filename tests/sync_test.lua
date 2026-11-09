@@ -629,6 +629,26 @@ local okHof, errHof = pcall(function()
 end)
 check(okHof, "Hall of Fame tab and popup draw: " .. tostring(errHof))
 table.remove(B.HALL_OF_FAME, 1) table.remove(B.HALL_OF_FAME, 1) table.remove(B.HALL_OF_FAME)
+local function fakeModel()
+    local calls = {}
+    return setmetatable({ calls = calls }, { __index = function(_, k)
+        return function(_, ...) calls[#calls + 1] = { k, ... } end
+    end }), calls
+end
+local function called(calls, name)
+    for _, c in ipairs(calls) do if c[1] == name then return c end end
+end
+local model, calls = fakeModel()
+check(B:DressModel(model, B:GetMember(alice.guid)), "a guildie's model can be dressed")
+local race = called(calls, "SetCustomRace")
+check(race and race[2] == 1 and race[3] == 0, "uses their race and gender (Human, male)")
+local tryOn = called(calls, "TryOn")
+check(tryOn and tryOn[2] == A:Me().gear[1], "and puts their synced gear on")
+local own, ownCalls = fakeModel()
+B:DressModel(own, B:Me())
+local unit = called(ownCalls, "SetUnit")
+check(unit and unit[2] == "player" and not called(ownCalls, "SetCustomRace"), "your own model is exactly you")
+check(not B:DressModel(fakeModel(), { guid = "x", name = "Mystery" }), "unknown race falls back to the class icon")
 
 print(("\n%d passed, %d failed, %d addon messages sent"):format(passed, failed, Mock.sent))
 if failed > 0 then os.exit(1) end
