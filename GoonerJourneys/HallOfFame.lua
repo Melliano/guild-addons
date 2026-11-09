@@ -93,38 +93,84 @@ end
 -- Gear slots that show on a character (not neck, rings or trinkets).
 local VISIBLE_SLOTS = { 1, 3, 4, 5, 6, 7, 8, 9, 10, 15, 16, 17, 18, 19 }
 
--- Dress a DressUpModel as this goon. Returns true if it worked.
+-- A unit token for this goon if the game can see them right now (group,
+-- target, mouseover, nameplates): then we can show their exact look.
+function GJ:FindUnitFor(guid)
+    if not guid then return nil end
+    local tokens = { "target", "focus", "mouseover" }
+    for i = 1, 4 do tokens[#tokens + 1] = "party" .. i end
+    for i = 1, 40 do tokens[#tokens + 1] = "raid" .. i end
+    if C_NamePlate and C_NamePlate.GetNamePlates then
+        local ok, plates = pcall(C_NamePlate.GetNamePlates)
+        if ok and plates then
+            for _, plate in ipairs(plates) do
+                local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+                if u then tokens[#tokens + 1] = u end
+            end
+        end
+    end
+    for _, u in ipairs(tokens) do
+        local ok, g = pcall(UnitGUID, u)
+        if ok and g == guid and (not UnitIsVisible or UnitIsVisible(u)) then return u end
+    end
+    return nil
+end
+
+local function wearGear(model, m)
+    if model.Undress then model:Undress() end
+    local gear = m.gear or {}
+    for _, slot in ipairs(VISIBLE_SLOTS) do
+        if type(gear[slot]) == "string" then pcall(model.TryOn, model, gear[slot]) end
+    end
+end
+
+-- Dress a DressUpModel as this goon.
+-- Returns true, how ("you" | "exact" | "custom") or false, reason.
 function GJ:DressModel(model, m)
-    if not m then return false end
-    local ok = pcall(function()
-        if self:IsMe(m.guid) then
-            model:SetUnit("player")
-            return
-        end
-        local id = raceID(m.race)
-        if not id or not model.SetCustomRace then error("no race") end
-        -- UnitSex: 2 = male, 3 = female; SetCustomRace wants 0 / 1.
+    if not m then return false, "not synced yet" end
+    model.gjMember = nil
+    if self:IsMe(m.guid) then
+        local ok, err = pcall(model.SetUnit, model, "player")
+        return ok, ok and "you" or tostring(err)
+    end
+    local unit = self:FindUnitFor(m.guid)
+    if unit and pcall(model.SetUnit, model, unit) then return true, "exact" end
+    local id = raceID(m.race)
+    if not id then return false, "race unknown (" .. tostring(m.race) .. ")" end
+    if not model.SetCustomRace then return false, "SetCustomRace not available" end
+    local ok, err = pcall(function()
+        -- Load a player model first (custom race needs one), then swap race
+        -- and gender (UnitSex 2/3 -> 0/1), then put their gear on.
+        model:SetUnit("player")
         model:SetCustomRace(id, (m.sex == 3) and 1 or 0)
-        if model.Undress then model:Undress() end
-        local gear = m.gear or {}
-        for _, slot in ipairs(VISIBLE_SLOTS) do
-            if type(gear[slot]) == "string" then model:TryOn(gear[slot]) end
-        end
+        wearGear(model, m)
     end)
-    return ok
+    if not ok then return false, tostring(err) end
+    -- The model loads asynchronously; dress it again once it has.
+    model.gjMember = m
+    return true, "custom"
 end
 
 local function stageSlot(parent)
     local slot = CreateFrame("Button", nil, parent)
-    slot.floor = S.Circle(slot, 80, { 1, 0.82, 0.25, 0.22 }, "BACKGROUND")
-    slot.floor:SetPoint("BOTTOM", 0, 14)
+    -- Soft spotlight behind, and a shadow under the feet.
+    slot.light = S.Circle(slot, 150, { 1, 0.82, 0.25, 0.07 }, "BACKGROUND")
+    slot.light:SetPoint("CENTER", 0, 20)
+    slot.shadow = S.Circle(slot, 10, { 0, 0, 0, 0.55 }, "BORDER")
+    slot.shadow:SetSize(84, 16)
+    slot.shadow:SetPoint("BOTTOM", 0, 26)
     slot.model = CreateFrame("DressUpModel", nil, slot)
-    slot.model:SetPoint("TOPLEFT", 0, 0)
-    slot.model:SetPoint("BOTTOMRIGHT", 0, 18)
-    -- Fallback when a model can't be built: the class icon.
-    slot.icon = slot:CreateTexture(nil, "ARTWORK")
-    slot.icon:SetSize(56, 56)
-    slot.icon:SetPoint("CENTER", 0, 10)
+    slot.model:SetPoint("TOPLEFT", 0, -4)
+    slot.model:SetPoint("BOTTOMRIGHT", 0, 22)
+    slot.model:SetScript("OnModelLoaded", function(self)
+        if self.gjMember then wearGear(self, self.gjMember) end
+    end)
+    -- Fallback when a model can't be built: class icon in a class ring.
+    slot.ring = S.Circle(slot, 76, C.border, "ARTWORK")
+    slot.ring:SetPoint("CENTER", 0, 18)
+    slot.icon = slot:CreateTexture(nil, "OVERLAY")
+    slot.icon:SetSize(68, 68)
+    slot.icon:SetPoint("CENTER", slot.ring)
     S.RoundMask(slot, slot.icon)
     slot.name = S.Text(slot, 13, C.text, S.FONT)
     slot.name:SetPoint("BOTTOM", 0, 0)
@@ -178,16 +224,24 @@ local function layoutStage(stage, names, width, height)
             slot.title, slot.sub = name, "Legend"
         end
         slot.model:Show()
-        local dressed = GJ:DressModel(slot.model, m)
+        local dressed, how = GJ:DressModel(slot.model, m)
+        slot.how = how
         if dressed then
+            pcall(slot.model.SetPortraitZoom, slot.model, 0)
             -- Fan out: left half turns right, right half turns left.
             local facing = ((i - (n + 1) / 2) / n) * -0.9
             pcall(slot.model.SetFacing, slot.model, facing)
             slot.icon:Hide()
+            slot.ring:Hide()
+            slot.shadow:Show()
         else
             slot.model:Hide()
+            slot.shadow:Hide()
             slot.icon:SetTexture(m and S.ClassIcon(m.class) or "Interface\\Icons\\INV_Misc_QuestionMark")
+            local r, g, b = GJ:ClassColor(m and m.class)
+            slot.ring:SetVertexColor(r, g, b, 1)
             slot.icon:Show()
+            slot.ring:Show()
         end
     end
     for i = #names + 1, #slots do slots[i]:Hide() end
@@ -395,4 +449,23 @@ function GJ:RefreshHallOfFame()
     tab.child:SetHeight(math.max(10, y))
     tab.empty:SetText(#self.HALL_OF_FAME == 0 and "Nobody's famous yet." or "")
     if tab.scroll.UpdateThumb then tab.scroll.UpdateThumb() end
+end
+
+-- /gooner fame debug: why each goon's model does or doesn't show.
+function GJ:DebugHallOfFame()
+    local entry = self.HALL_OF_FAME[1]
+    if not entry then return end
+    local probe = CreateFrame("DressUpModel", nil, UIParent)
+    probe:SetSize(10, 10)
+    probe:Hide()
+    self:Print(("Hall of Fame models (SetCustomRace %s):"):format(probe.SetCustomRace and "available" or "MISSING"))
+    for _, name in ipairs(entry.members or {}) do
+        local m = self:FindMemberByName(name)
+        local gearCount = 0
+        if m and m.gear then for k in pairs(m.gear) do if type(k) == "number" then gearCount = gearCount + 1 end end end
+        local ok, how = self:DressModel(probe, m)
+        DEFAULT_CHAT_FRAME:AddMessage(("   %s: %s | race %s, sex %s, %d gear items | %s"):format(
+            name, m and "synced" or "NOT FOUND", tostring(m and m.race), tostring(m and m.sex), gearCount,
+            ok and ("model OK (" .. tostring(how) .. ")") or ("model failed: " .. tostring(how))))
+    end
 end

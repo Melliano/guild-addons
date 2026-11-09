@@ -649,6 +649,13 @@ B:DressModel(own, B:Me())
 local unit = called(ownCalls, "SetUnit")
 check(unit and unit[2] == "player" and not called(ownCalls, "SetCustomRace"), "your own model is exactly you")
 check(not B:DressModel(fakeModel(), { guid = "x", name = "Mystery" }), "unknown race falls back to the class icon")
+local order = {}
+for i, c in ipairs(calls) do order[c[1]] = order[c[1]] or i end
+check(order.SetUnit and order.SetCustomRace and order.TryOn and order.SetUnit < order.SetCustomRace and order.SetCustomRace < order.TryOn,
+    "loads a player model, then sets race, then gear (custom race needs a model first)")
+check(model.gjMember == B:GetMember(alice.guid), "gear is put on again once the model finishes loading")
+local okDbg, errDbg = pcall(function() B:DebugHallOfFame() end)
+check(okDbg, "/gooner fame debug works: " .. tostring(errDbg))
 
 print(("\n%d passed, %d failed, %d addon messages sent"):format(passed, failed, Mock.sent))
 if failed > 0 then os.exit(1) end
