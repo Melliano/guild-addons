@@ -30,6 +30,7 @@ local GUILD_TAB_DEFS = {
     { "race", "Race to 60" },
     { "deaths", "Death Map" },
     { "quests", "Quests" },
+    { "halloffame", "Hall of Fame" },
 }
 local GUILD_TABS = {}
 for _, def in ipairs(GUILD_TAB_DEFS) do GUILD_TABS[def[1]] = true end
@@ -1060,7 +1061,8 @@ function GJ:RefreshCurrentTab()
     elseif tab == "latest" then self:RefreshActivity()
     elseif tab == "leaders" then self:RefreshLeaders()
     elseif tab == "deaths" then self:RefreshDeathMap()
-    elseif tab == "quests" then self:RefreshQuests() end
+    elseif tab == "quests" then self:RefreshQuests()
+    elseif tab == "halloffame" then self:RefreshHallOfFame() end
 end
 
 function GJ:RefreshHeader()
@@ -1132,6 +1134,7 @@ local function build()
     GJ:CreateRacePage(ui.pages.race, GUILD_W, ui.guildPageH)
     GJ:CreateDeathMapPage(ui.pages.deaths, GUILD_W, ui.guildPageH)
     GJ:CreateQuestPage(ui.pages.quests, GUILD_W, ui.guildPageH)
+    GJ:CreateHallOfFamePage(ui.pages.halloffame, GUILD_W, ui.guildPageH)
     f:SetScript("OnShow", function()
         if not GJ.selectedGUID then GJ.selectedGUID = GJ:PlayerGUID() end
         -- Reopen wherever you left off (your own journey the first time).

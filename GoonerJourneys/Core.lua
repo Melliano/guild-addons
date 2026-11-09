@@ -232,6 +232,8 @@ SlashCmdList.GOONERJOURNEYS = function(input)
     elseif cmd == "alerts" then
         GJ.db.settings.goonerAlerts = not GJ.db.settings.goonerAlerts
         GJ:Print("Gooner zone alerts", GJ.db.settings.goonerAlerts and "on" or "off")
+    elseif cmd == "fame" or cmd == "hof" or cmd == "hall" then
+        GJ:ShowHallOfFame()
     elseif cmd == "weekly" then
         GJ.db.settings.weeklyRecap = not GJ.db.settings.weeklyRecap
         GJ:Print("Weekly recap on login", GJ.db.settings.weeklyRecap and "on" or "off")
@@ -239,6 +241,6 @@ SlashCmdList.GOONERJOURNEYS = function(input)
         GJ.db.settings.debug = not GJ.db.settings.debug
         GJ:Print("Debug", GJ.db.settings.debug and "on" or "off")
     else
-        GJ:Print("Commands: /gooner [show | reload | recap | sync | status | where | pings | versions | update | news | announce | alerts | weekly | map | minimap | interval <sec> | debug]")
+        GJ:Print("Commands: /gooner [show | reload | recap | sync | status | where | pings | versions | update | news | announce | alerts | fame | weekly | map | minimap | interval <sec> | debug]")
     end
 end
