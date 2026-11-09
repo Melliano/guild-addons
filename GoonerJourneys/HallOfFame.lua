@@ -71,28 +71,11 @@ local function fanfare()
 end
 
 ---------------------------------------------------------------------------
--- The stage: one 3D character model per goon
+-- The stage: a hero card per goon, or live 3D models when every goon on
+-- the entry can be shown live (WoW Forever doesn't let addons build other
+-- players' characters from scratch - no SetCustomRace - so a guildie's
+-- model only works while the game can see them: group, target, nearby).
 ---------------------------------------------------------------------------
--- Race file name ("NightElf") -> race ID for SetCustomRace. Built from the
--- game so new races (Skyborne) work; classic IDs as a fallback.
-local RACE_IDS
-local function raceID(raceFile)
-    if not raceFile then return nil end
-    if not RACE_IDS then
-        RACE_IDS = { Human = 1, Orc = 2, Dwarf = 3, NightElf = 4, Scourge = 5, Tauren = 6, Gnome = 7, Troll = 8 }
-        if C_CreatureInfo and C_CreatureInfo.GetRaceInfo then
-            for id = 1, 120 do
-                local ok, info = pcall(C_CreatureInfo.GetRaceInfo, id)
-                if ok and info and info.clientFileString then RACE_IDS[info.clientFileString] = id end
-            end
-        end
-    end
-    return RACE_IDS[raceFile]
-end
-
--- Gear slots that show on a character (not neck, rings or trinkets).
-local VISIBLE_SLOTS = { 1, 3, 4, 5, 6, 7, 8, 9, 10, 15, 16, 17, 18, 19 }
-
 -- A unit token for this goon if the game can see them right now (group,
 -- target, mouseover, nameplates): then we can show their exact look.
 function GJ:FindUnitFor(guid)
@@ -116,65 +99,101 @@ function GJ:FindUnitFor(guid)
     return nil
 end
 
-local function wearGear(model, m)
-    if model.Undress then model:Undress() end
-    local gear = m.gear or {}
-    for _, slot in ipairs(VISIBLE_SLOTS) do
-        if type(gear[slot]) == "string" then pcall(model.TryOn, model, gear[slot]) end
-    end
-end
-
--- Dress a DressUpModel as this goon.
--- Returns true, how ("you" | "exact" | "custom") or false, reason.
+-- Show this goon's live model. Returns true, how ("you" | "exact") or
+-- false, reason.
 function GJ:DressModel(model, m)
     if not m then return false, "not synced yet" end
-    model.gjMember = nil
     if self:IsMe(m.guid) then
         local ok, err = pcall(model.SetUnit, model, "player")
         return ok, ok and "you" or tostring(err)
     end
     local unit = self:FindUnitFor(m.guid)
-    if unit and pcall(model.SetUnit, model, unit) then return true, "exact" end
-    local id = raceID(m.race)
-    if not id then return false, "race unknown (" .. tostring(m.race) .. ")" end
-    if not model.SetCustomRace then return false, "SetCustomRace not available" end
-    local ok, err = pcall(function()
-        -- Load a player model first (custom race needs one), then swap race
-        -- and gender (UnitSex 2/3 -> 0/1), then put their gear on.
-        model:SetUnit("player")
-        model:SetCustomRace(id, (m.sex == 3) and 1 or 0)
-        wearGear(model, m)
+    if not unit then return false, "not in view (group up or stand nearby)" end
+    local ok, err = pcall(model.SetUnit, model, unit)
+    return ok, ok and "exact" or tostring(err)
+end
+
+-- Their best few items: rarest first, then highest item level.
+local GEAR_SKIP = { [4] = true, [19] = true } -- shirt, tabard
+function GJ:BestItems(m, count)
+    local list = {}
+    for slot, item in pairs(m and m.gear or {}) do
+        if type(slot) == "number" and type(item) == "string" and not GEAR_SKIP[slot] then
+            local _, _, quality, ilvl = GJ.ItemInfo(item)
+            list[#list + 1] = { item = item, q = quality or 1, ilvl = ilvl or 0 }
+        end
+    end
+    table.sort(list, function(x, y)
+        if x.q ~= y.q then return x.q > y.q end
+        if x.ilvl ~= y.ilvl then return x.ilvl > y.ilvl end
+        return x.item < y.item
     end)
-    if not ok then return false, tostring(err) end
-    -- The model loads asynchronously; dress it again once it has.
-    model.gjMember = m
-    return true, "custom"
+    for i = #list, (count or 3) + 1, -1 do list[i] = nil end
+    return list
+end
+
+local function gearIcon(parent)
+    local b = CreateFrame("Button", nil, parent)
+    b.border = S.Fill(b, C.border, "ARTWORK")
+    b.border:SetAllPoints()
+    b.icon = b:CreateTexture(nil, "OVERLAY")
+    b.icon:SetPoint("TOPLEFT", 1, -1)
+    b.icon:SetPoint("BOTTOMRIGHT", -1, 1)
+    b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    b:SetScript("OnEnter", function(self)
+        if self.item then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetHyperlink(self.item)
+            GameTooltip:Show()
+        end
+    end)
+    b:SetScript("OnLeave", GameTooltip_Hide)
+    return b
 end
 
 local function stageSlot(parent)
     local slot = CreateFrame("Button", nil, parent)
-    -- Soft spotlight behind, and a shadow under the feet.
-    slot.light = S.Circle(slot, 150, { 1, 0.82, 0.25, 0.07 }, "BACKGROUND")
-    slot.light:SetPoint("CENTER", 0, 20)
-    slot.shadow = S.Circle(slot, 10, { 0, 0, 0, 0.55 }, "BORDER")
-    slot.shadow:SetSize(84, 16)
-    slot.shadow:SetPoint("BOTTOM", 0, 26)
+
+    -- Live model mode.
+    slot.shadow = S.Circle(slot, 10, { 0, 0, 0, 0.5 }, "BORDER")
+    slot.shadow:SetSize(80, 14)
     slot.model = CreateFrame("DressUpModel", nil, slot)
     slot.model:SetPoint("TOPLEFT", 0, -4)
     slot.model:SetPoint("BOTTOMRIGHT", 0, 22)
-    slot.model:SetScript("OnModelLoaded", function(self)
-        if self.gjMember then wearGear(self, self.gjMember) end
-    end)
-    -- Fallback when a model can't be built: class icon in a class ring.
-    slot.ring = S.Circle(slot, 76, C.border, "ARTWORK")
-    slot.ring:SetPoint("CENTER", 0, 18)
-    slot.icon = slot:CreateTexture(nil, "OVERLAY")
-    slot.icon:SetSize(68, 68)
-    slot.icon:SetPoint("CENTER", slot.ring)
-    S.RoundMask(slot, slot.icon)
     slot.name = S.Text(slot, 13, C.text, S.FONT)
     slot.name:SetPoint("BOTTOM", 0, 0)
     slot.name:SetJustifyH("CENTER")
+
+    -- Hero card mode.
+    local card = CreateFrame("Frame", nil, slot)
+    card:SetPoint("TOPLEFT", 5, -8)
+    card:SetPoint("BOTTOMRIGHT", -5, 8)
+    S.Panel(card, { 0.09, 0.085, 0.075, 0.95 }, { 1, 1, 1, 0.08 })
+    card.stripe = S.Fill(card, C.accent, "ARTWORK")
+    card.stripe:SetPoint("TOPLEFT", 1, -1)
+    card.stripe:SetPoint("TOPRIGHT", -1, -1)
+    card.stripe:SetHeight(3)
+    card.glow = S.Circle(card, 10, { 1, 1, 1, 0.08 }, "BORDER")
+    card.ring = S.Circle(card, 10, C.accent, "ARTWORK")
+    card.icon = card:CreateTexture(nil, "OVERLAY")
+    S.RoundMask(card, card.icon)
+    card.badge = S.Circle(card, 26, C.bg, "OVERLAY")
+    card.badge:SetDrawLayer("OVERLAY", 3)
+    card.badgeRing = S.Circle(card, 30, C.accent, "OVERLAY")
+    card.badgeRing:SetDrawLayer("OVERLAY", 2)
+    card.level = S.Text(card, 11, C.text, S.FONT)
+    card.level:SetDrawLayer("OVERLAY", 4)
+    card.level:SetJustifyH("CENTER")
+    card.name = S.Text(card, 15, C.text, S.FONT)
+    card.name:SetJustifyH("CENTER")
+    card.sub = S.Text(card, 11, C.muted)
+    card.sub:SetJustifyH("CENTER")
+    card.rank = S.Text(card, 10, C.accent, S.FONT)
+    card.rank:SetJustifyH("CENTER")
+    card.gear = {}
+    for i = 1, 3 do card.gear[i] = gearIcon(card) end
+    slot.card = card
+
     slot:SetScript("OnClick", function(self)
         if self.guid then
             if GJ.hallPopup then GJ.hallPopup:Hide() end
@@ -193,7 +212,72 @@ local function stageSlot(parent)
     return slot
 end
 
--- Fill `stage` with one model per name, fanned slightly towards the middle.
+-- Size and fill a hero card for this goon.
+local function fillCard(card, m, name, w, h)
+    local col = { GJ:ClassColor(m and m.class) }
+    local p = math.floor(math.min(w - 40, h * 0.38))     -- portrait size
+    local top = math.floor(h * 0.07)
+    card.stripe:SetVertexColor(col[1], col[2], col[3], 1)
+    card.glow:SetSize(p + 26, p + 26)
+    card.glow:ClearAllPoints()
+    card.glow:SetPoint("TOP", 0, -top + 9)
+    card.glow:SetVertexColor(col[1], col[2], col[3], 0.12)
+    card.ring:SetSize(p + 8, p + 8)
+    card.ring:ClearAllPoints()
+    card.ring:SetPoint("TOP", 0, -top + 4)
+    card.ring:SetVertexColor(col[1], col[2], col[3], 1)
+    card.icon:SetSize(p, p)
+    card.icon:ClearAllPoints()
+    card.icon:SetPoint("CENTER", card.ring)
+    card.icon:SetTexture(m and S.ClassIcon(m.class) or "Interface\\Icons\\INV_Misc_QuestionMark")
+    card.badgeRing:ClearAllPoints()
+    card.badgeRing:SetPoint("CENTER", card.ring, "BOTTOMRIGHT", -p * 0.12, p * 0.12)
+    card.badgeRing:SetVertexColor(col[1], col[2], col[3], 1)
+    card.badge:ClearAllPoints()
+    card.badge:SetPoint("CENTER", card.badgeRing)
+    card.level:ClearAllPoints()
+    card.level:SetPoint("CENTER", card.badgeRing, "CENTER", 0, 0)
+    card.level:SetText(m and m.level or "?")
+    local showBadge = m ~= nil
+    card.badge:SetShown(showBadge) card.badgeRing:SetShown(showBadge) card.level:SetShown(showBadge)
+
+    card.name:ClearAllPoints()
+    card.name:SetPoint("TOP", card.ring, "BOTTOM", 0, -10)
+    card.name:SetWidth(w - 16)
+    card.name:SetText(name)
+    card.name:SetTextColor(col[1], col[2], col[3])
+    card.sub:ClearAllPoints()
+    card.sub:SetPoint("TOP", card.name, "BOTTOM", 0, -4)
+    card.sub:SetWidth(w - 16)
+    card.sub:SetText(m and ("%s %s"):format(S.Pretty(m.race), S.ClassName(m.class)) or "Not synced yet")
+    card.rank:ClearAllPoints()
+    card.rank:SetPoint("TOP", card.sub, "BOTTOM", 0, -4)
+    card.rank:SetWidth(w - 16)
+    card.rank:SetText(m and GJ:MemberRank(m):upper() or "")
+    card.rank:SetShown(h >= 200) -- no room on the smaller tab cards
+
+    local items = GJ:BestItems(m, 3)
+    local g = math.max(18, math.min(26, math.floor(h * 0.11)))
+    local total = #items * g + math.max(0, #items - 1) * 5
+    for i, b in ipairs(card.gear) do
+        local it = items[i]
+        if it then
+            b:SetSize(g, g)
+            b:ClearAllPoints()
+            b:SetPoint("BOTTOMLEFT", card, "BOTTOM", -total / 2 + (i - 1) * (g + 5), 10)
+            b.item = it.item
+            b.icon:SetTexture(GJ.ItemIcon(it.item) or "Interface\\Icons\\INV_Misc_QuestionMark")
+            local r, gg, bb = GJ.ItemQualityColor(it.q)
+            b.border:SetVertexColor(r, gg, bb, 1)
+            b:Show()
+        else
+            b:Hide()
+        end
+    end
+end
+
+-- Fill `stage` with one goon per slot: live models if every goon can be
+-- shown live right now, otherwise matching hero cards for everyone.
 local stageSlots = setmetatable({}, { __mode = "k" })
 
 local function layoutStage(stage, names, width, height)
@@ -201,6 +285,14 @@ local function layoutStage(stage, names, width, height)
     if not slots then slots = {} stageSlots[stage] = slots end
     local n = math.max(1, #names)
     local w = width / n
+    local members, live = {}, #names > 0
+    for i, name in ipairs(names) do
+        members[i] = GJ:FindMemberByName(name)
+        local m = members[i]
+        if not m or not (GJ:IsMe(m.guid) or GJ:FindUnitFor(m.guid)) then live = false end
+    end
+    stage.gjMode = live and "models" or "cards"
+
     for i, name in ipairs(names) do
         local slot = slots[i]
         if not slot then
@@ -211,37 +303,35 @@ local function layoutStage(stage, names, width, height)
         slot:ClearAllPoints()
         slot:SetPoint("TOPLEFT", stage, "TOPLEFT", (i - 1) * w, 0)
         slot:Show()
-        local m = GJ:FindMemberByName(name)
+        local m = members[i]
         slot.guid = m and m.guid or nil
-        slot.name:SetText(name)
         if m then
-            local r, g, b = GJ:ClassColor(m.class)
-            slot.name:SetTextColor(r, g, b)
             slot.title = GJ:ColoredName(m)
             slot.sub = ("Level %d %s %s"):format(m.level or 0, S.Pretty(m.race), S.ClassName(m.class))
         else
-            slot.name:SetTextColor(unpack(C.text))
-            slot.title, slot.sub = name, "Legend"
+            slot.title, slot.sub = name, "Hasn't synced to you yet"
         end
-        slot.model:Show()
-        local dressed, how = GJ:DressModel(slot.model, m)
-        slot.how = how
-        if dressed then
+
+        local modelOK = live and GJ:DressModel(slot.model, m)
+        if modelOK then
+            slot.card:Hide()
+            slot.model:Show()
             pcall(slot.model.SetPortraitZoom, slot.model, 0)
-            -- Fan out: left half turns right, right half turns left.
             local facing = ((i - (n + 1) / 2) / n) * -0.9
             pcall(slot.model.SetFacing, slot.model, facing)
-            slot.icon:Hide()
-            slot.ring:Hide()
+            slot.shadow:ClearAllPoints()
+            slot.shadow:SetPoint("BOTTOM", 0, math.floor(height * 0.24))
             slot.shadow:Show()
+            slot.name:SetText(name)
+            local r, g, b = GJ:ClassColor(m and m.class)
+            slot.name:SetTextColor(r, g, b)
+            slot.name:Show()
         else
             slot.model:Hide()
             slot.shadow:Hide()
-            slot.icon:SetTexture(m and S.ClassIcon(m.class) or "Interface\\Icons\\INV_Misc_QuestionMark")
-            local r, g, b = GJ:ClassColor(m and m.class)
-            slot.ring:SetVertexColor(r, g, b, 1)
-            slot.icon:Show()
-            slot.ring:Show()
+            slot.name:Hide()
+            fillCard(slot.card, m, name, w - 10, height - 16)
+            slot.card:Show()
         end
     end
     for i = #names + 1, #slots do slots[i]:Hide() end
@@ -257,7 +347,7 @@ local function createStage(parent, width, height)
     glow:SetPoint("TOPLEFT", 1, -1)
     glow:SetPoint("BOTTOMRIGHT", -1, 1)
     if CreateColor and glow.SetGradient then
-        pcall(glow.SetGradient, glow, "VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(GOLD[1], GOLD[2], GOLD[3], 0.18))
+        pcall(glow.SetGradient, glow, "VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(GOLD[1], GOLD[2], GOLD[3], 0.10))
     else
         glow:SetVertexColor(0, 0, 0, 0)
     end
@@ -458,7 +548,7 @@ function GJ:DebugHallOfFame()
     local probe = CreateFrame("DressUpModel", nil, UIParent)
     probe:SetSize(10, 10)
     probe:Hide()
-    self:Print(("Hall of Fame models (SetCustomRace %s):"):format(probe.SetCustomRace and "available" or "MISSING"))
+    self:Print("Hall of Fame: live 3D models show when every goon below is OK, otherwise hero cards:")
     for _, name in ipairs(entry.members or {}) do
         local m = self:FindMemberByName(name)
         local gearCount = 0

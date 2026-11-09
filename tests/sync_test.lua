@@ -639,21 +639,17 @@ local function called(calls, name)
     for _, c in ipairs(calls) do if c[1] == name then return c end end
 end
 local model, calls = fakeModel()
-check(B:DressModel(model, B:GetMember(alice.guid)), "a guildie's model can be dressed")
-local race = called(calls, "SetCustomRace")
-check(race and race[2] == 1 and race[3] == 0, "uses their race and gender (Human, male)")
-local tryOn = called(calls, "TryOn")
-check(tryOn and tryOn[2] == A:Me().gear[1], "and puts their synced gear on")
+local okModel, why = B:DressModel(model, B:GetMember(alice.guid))
+check(not okModel and why:find("not in view"), "a guildie who isn't in view gets a hero card, not a model")
+check(not called(calls, "SetCustomRace"), "never uses SetCustomRace (not on WoW Forever)")
 local own, ownCalls = fakeModel()
-B:DressModel(own, B:Me())
-local unit = called(ownCalls, "SetUnit")
-check(unit and unit[2] == "player" and not called(ownCalls, "SetCustomRace"), "your own model is exactly you")
-check(not B:DressModel(fakeModel(), { guid = "x", name = "Mystery" }), "unknown race falls back to the class icon")
-local order = {}
-for i, c in ipairs(calls) do order[c[1]] = order[c[1]] or i end
-check(order.SetUnit and order.SetCustomRace and order.TryOn and order.SetUnit < order.SetCustomRace and order.SetCustomRace < order.TryOn,
-    "loads a player model, then sets race, then gear (custom race needs a model first)")
-check(model.gjMember == B:GetMember(alice.guid), "gear is put on again once the model finishes loading")
+check(B:DressModel(own, B:Me()) and called(ownCalls, "SetUnit")[2] == "player", "your own model is exactly you")
+local best = B:BestItems(B:GetMember(alice.guid), 3)
+check(#best == 1 and best[1].item == A:Me().gear[1], "hero card shows their best items")
+B:ShowHallOfFame({ id = "x", title = "T", members = { "Bob", "Alice" } })
+check(B.hallPopup.stage.gjMode == "cards", "mixed visibility: everyone gets a matching hero card")
+B:ShowHallOfFame({ id = "y", title = "T", members = { "Bob" } })
+check(B.hallPopup.stage.gjMode == "models", "everyone in view: live 3D models")
 local okDbg, errDbg = pcall(function() B:DebugHallOfFame() end)
 check(okDbg, "/gooner fame debug works: " .. tostring(errDbg))
 
