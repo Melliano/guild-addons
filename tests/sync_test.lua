@@ -9,7 +9,7 @@ local FILES = {
     "GoonerJourneys/Gear.lua", "GoonerJourneys/Style.lua", "GoonerJourneys/Score.lua", "GoonerJourneys/MapCanvas.lua",
     "GoonerJourneys/WorldMapOverlay.lua", "GoonerJourneys/MapPing.lua", "GoonerJourneys/UI.lua", "GoonerJourneys/Race.lua",
     "GoonerJourneys/DeathMap.lua", "GoonerJourneys/QuestLog.lua",
-    "GoonerJourneys/News.lua", "GoonerJourneys/Activity.lua", "GoonerJourneys/Recap.lua", "GoonerJourneys/Version.lua", "GoonerJourneys/GoonerZone.lua",
+    "GoonerJourneys/News.lua", "GoonerJourneys/Activity.lua", "GoonerJourneys/HallOfFame.lua", "GoonerJourneys/Recap.lua", "GoonerJourneys/Version.lua", "GoonerJourneys/GoonerZone.lua",
     "GoonerJourneys/Minimap.lua",
 }
 
@@ -599,6 +599,63 @@ end
 print("Guildies who hear each other don't fall back to whispers")
 check(not (A.peers.Bob and A.peers.Bob.whisper) and not (B.peers.Alice and B.peers.Alice.whisper),
     "no whisper mode between Alice and Bob")
+
+print("Hall of Fame")
+check(B.db.private.hofSeen and B.db.private.hofSeen["deadmines-2026-11"], "The Deadmines entry popped up on login and was marked seen")
+local shown = {}
+local origHof = B.ShowHallOfFame
+B.ShowHallOfFame = function(self, entry) shown[#shown + 1] = entry and entry.id or "latest" return origHof(self, entry) end
+B.db.private.hofSeen = nil
+B:CheckHallOfFame()
+check(#shown == 1 and shown[1] == "deadmines-2026-11", "a new entry pops up once")
+B:CheckHallOfFame()
+check(#shown == 1, "and not again")
+table.insert(B.HALL_OF_FAME, 1, { id = "test-new", t = B:Now(), title = "TEST", members = { "Alice" } })
+table.insert(B.HALL_OF_FAME, { id = "test-ancient", t = B:Now() - 400 * 86400, title = "OLD", members = { "Bob" } })
+B:CheckHallOfFame()
+check(#shown == 2 and shown[2] == "test-new", "a later entry pops up when it ships")
+check(B.db.private.hofSeen["test-ancient"] and not shown[3], "very old entries are marked seen without a popup")
+B.db.settings.hallOfFame = false
+table.insert(B.HALL_OF_FAME, 1, { id = "test-off", t = B:Now(), title = "OFF", members = {} })
+B:CheckHallOfFame()
+check(#shown == 2, "/gooner fame setting off: no popup")
+B.db.settings.hallOfFame = true
+check(B:FindMemberByName("alice") == B:GetMember(alice.guid) and B:FindMemberByName("Nobody") == nil, "find goons by name, any case")
+check(B:HallNames({ members = { "Alice", "Orianna", "Rook" } }):find("Orianna and Rook$") ~= nil, "names read 'A, B and C'")
+local deadmines
+for _, e in ipairs(B.HALL_OF_FAME) do if e.id == "deadmines-2026-11" then deadmines = e end end
+check(deadmines and #deadmines.members == 5 and B:HallNames(deadmines):find("Rasputin and Boush$") ~= nil,
+    "The Deadmines entry names all five goons, Boush included")
+local okHof, errHof = pcall(function()
+    B:ShowTab("halloffame")
+    B:RefreshHallOfFame()
+    B:ShowHallOfFame()
+end)
+check(okHof, "Hall of Fame tab and popup draw: " .. tostring(errHof))
+table.remove(B.HALL_OF_FAME, 1) table.remove(B.HALL_OF_FAME, 1) table.remove(B.HALL_OF_FAME)
+local function fakeModel()
+    local calls = {}
+    return setmetatable({ calls = calls }, { __index = function(_, k)
+        return function(_, ...) calls[#calls + 1] = { k, ... } end
+    end }), calls
+end
+local function called(calls, name)
+    for _, c in ipairs(calls) do if c[1] == name then return c end end
+end
+local model, calls = fakeModel()
+local okModel, why = B:DressModel(model, B:GetMember(alice.guid))
+check(not okModel and why:find("not in view"), "a guildie who isn't in view gets a hero card, not a model")
+check(not called(calls, "SetCustomRace"), "never uses SetCustomRace (not on WoW Forever)")
+local own, ownCalls = fakeModel()
+check(B:DressModel(own, B:Me()) and called(ownCalls, "SetUnit")[2] == "player", "your own model is exactly you")
+local best = B:BestItems(B:GetMember(alice.guid), 3)
+check(#best == 1 and best[1].item == A:Me().gear[1], "hero card shows their best items")
+B:ShowHallOfFame({ id = "x", title = "T", members = { "Bob", "Alice" } })
+check(B.hallPopup.stage.gjMode == "cards", "mixed visibility: everyone gets a matching hero card")
+B:ShowHallOfFame({ id = "y", title = "T", members = { "Bob" } })
+check(B.hallPopup.stage.gjMode == "models", "everyone in view: live 3D models")
+local okDbg, errDbg = pcall(function() B:DebugHallOfFame() end)
+check(okDbg, "/gooner fame debug works: " .. tostring(errDbg))
 
 print(("\n%d passed, %d failed, %d addon messages sent"):format(passed, failed, Mock.sent))
 if failed > 0 then os.exit(1) end

@@ -22,6 +22,7 @@ A Muddy Boots-style journey tracker for the whole guild. Every goon with the add
 - **Weekly recap:** your first login each week shows last week's highlights: levels gained, deaths, MVP, death of the week, biggest jumper and more.
 - **Gooner Score and ranks:** points for every milestone, from *Gooner Initiate* up to *Grand Gooner*.
 - **GOONER ZONE DETECTED:** when a goon walks into the Lion's Pride Inn in Goldshire, the whole guild gets a flashing alert with a raid-warning sound. Visits are counted, with milestones up to *Lives In Goldshire Inn*.
+- **Hall of Fame:** one-off shout-outs that ship with a release. Each new entry pops up once for every goon, with a fanfare, the first time they log in on that version. All entries stay in **Guild → Hall of Fame**. The named goons stand on a stage as 3D character models in their own gear. The first entry is *The Deadmines*.
 - **Update nudge:** if a guildie has a newer version, you get told, and an "Update" button appears with the download link.
 
 ### Install
@@ -43,6 +44,7 @@ Do **not** use GitHub's green "Download ZIP" button. It gives the folder the wro
 - `/gooner announce`: also post your own news in guild chat (off by default).
 - **Middle-click the world map** to ping that spot for the guild. Guildies see a pulsing marker with your name for 30 seconds, plus a chat line and a ping sound. `/gooner pings` turns receiving them on or off.
 - `/gooner alerts`: turn the GOONER ZONE alerts on or off.
+- `/gooner fame`: show the latest Hall of Fame entry again.
 - `/gooner weekly`: turn the weekly recap on login on or off.
 - `/gooner interval 30`: change how often your trail is sampled (5-300 seconds).
 - `/gooner minimap`: hide or show the minimap button.
@@ -61,3 +63,9 @@ WoW addons can't use the internet, so there's no server. Each member's addon sto
 - `scripts/package.sh [version]`: builds `dist/GoonerJourneys-<version>.zip`.
 - CI builds and tests every push.
 - **To publish a release:** go to **Actions** → **Build addon zip** → **Run workflow**, pick `main`, enter a version such as `0.2.0` and run it. GitHub creates the `v0.2.0` tag and a Release with the zip attached. Pushing a `v*` tag yourself does the same thing.
+
+### Adding a Hall of Fame entry
+1. Add an entry at the top of `GJ.HALL_OF_FAME` in `GoonerJourneys/HallOfFame.lua`. Give it a new unique `id`, a title, the goons' names and a short text.
+2. Merge and release. Everyone sees it once, on their first login with the new version.
+
+The goons named on an entry appear as 3D character models in their race, gender and last synced gear.
