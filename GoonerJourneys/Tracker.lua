@@ -4,6 +4,7 @@ local _, GJ = ...
 
 local ICON = "Interface\\Icons\\"
 local LEVEL_STEP = 5
+local EVERY_LEVEL_FROM = 31 -- from here on, every level is a milestone (and a guild news pop-up)
 local MAX_LEVEL = (GetMaxPlayerLevel and GetMaxPlayerLevel()) or 60
 
 ---------------------------------------------------------------------------
@@ -298,7 +299,7 @@ local lastLevelUp = 0
 local function recordLevel(level)
     GJ:RefreshMyInfo()
     GJ:SetStat("level", level)
-    if level % LEVEL_STEP == 0 or level == MAX_LEVEL then
+    if level % LEVEL_STEP == 0 or level == MAX_LEVEL or level >= EVERY_LEVEL_FROM then
         if not GJ:HasEvent(GJ:Me(), "level", level) then
             GJ:AddEvent("level", level, { p = GJ:CurrentPlayed() })
         end

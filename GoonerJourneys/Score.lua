@@ -28,6 +28,8 @@ GJ.RANKS = {
 
 function GJ:EventPoints(ev)
     if ev.dup then return 0 end
+    -- Every level past 30 is a milestone, but only every 5th is worth the full points.
+    if ev.k == "level" and type(ev.d) == "number" and ev.d % 5 ~= 0 then return 2 end
     if ev.k == "item" then return ITEM_POINTS[ev.q or 0] or 0 end
     if ev.k == "silly" and SPECIAL[ev.d] then return SPECIAL[ev.d] end
     return POINTS[ev.k] or 0

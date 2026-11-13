@@ -398,6 +398,35 @@ do
     B.GuildQuests = orig
 end
 
+print("Every level after 30 is a milestone")
+do
+    local lee = Mock.newClient({ name = "Lee", guid = "Player-1-00000030", level = 26 })
+    local mo = Mock.newClient({ name = "Mo", guid = "Player-1-00000031", level = 20 })
+    lee.guild, mo.guild = "Level Guild", "Level Guild"
+    local L, M = lee:load(FILES), mo:load(FILES)
+    lee:login()
+    mo:login()
+    Mock.advance(30)
+    local toasts = {}
+    local orig = M.ShowToast
+    M.ShowToast = function(self, guid, icon, title, ...) toasts[#toasts + 1] = title return orig(self, guid, icon, title, ...) end
+    for lvl = 27, 33 do
+        lee.level = lvl
+        lee:fire("PLAYER_LEVEL_UP", lvl)
+        Mock.advance(10)
+    end
+    local function has(n) return L:HasEvent(L:Me(), "level", n) end
+    check(not has(27) and not has(28) and not has(29), "levels 27-29 aren't milestones")
+    check(has(30) and has(31) and has(32) and has(33), "30, 31, 32 and 33 are")
+    local got = table.concat(toasts, " | ")
+    check(got:find("Lee reached level 31", 1, true) and got:find("Lee reached level 33", 1, true) and not got:find("level 29", 1, true),
+        "guildies get a pop-up for each level past 30: " .. got)
+    check(L:EventPoints({ k = "level", d = 31 }) == 2 and L:EventPoints({ k = "level", d = 35 }) == 10, "in-between levels are worth 2 points, every 5th still 10")
+    M.ShowToast = orig
+    lee:logout()
+    mo:logout()
+end
+
 print("World map pings")
 do
     local hal = Mock.newClient({ name = "Hal", guid = "Player-1-00000011", class = "MAGE", level = 20 })
