@@ -6,7 +6,7 @@ Addons for our guild on WoW Forever - Unregistered Hypercam Users
 A Muddy Boots-style journey tracker for the whole guild. Every goon with the addon records their journey, and the addon shares it with everyone else in the guild automatically.
 
 **What it tracks**
-- **Timeline:** level milestones every 5 levels (with /played at the time), first time in every zone, dungeon and raid, first boss kills, profession milestones, first rare, epic and legendary gear, and every death (who or what killed you, and where).
+- **Timeline:** every level (with total /played and how long that level took), first time in every zone, dungeon and raid, first boss kills, profession milestones, first rare, epic and legendary gear, and every death (who or what killed you, and where).
 - **Silly milestones:** *Humiliated By Wildlife*, *Gravity Check*, *Bunny Hopper*, *Professional Yapper*, *Ding... Dead*, *Touch Grass Warning*, *Walked To Mordor (Wrong Game)*, *Naked And Afraid* and about 40 more.
 - **Stats:** deaths, killing blows, critters murdered, quests, dungeon runs, bosses, wipes, miles travelled, flights, hearths, jumps, dances, hugs, guild chat messages, gold earned, /played and professions.
 - **Gear:** a snapshot of each member's equipped gear, viewable even when they're offline. Hover for tooltips, shift-click to link.

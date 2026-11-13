@@ -398,6 +398,45 @@ do
     B.GuildQuests = orig
 end
 
+print("Every level is a milestone, with total played and time for the level")
+do
+    local lee = Mock.newClient({ name = "Lee", guid = "Player-1-00000030", level = 21 })
+    local mo = Mock.newClient({ name = "Mo", guid = "Player-1-00000031", level = 20 })
+    lee.guild, mo.guild = "Level Guild", "Level Guild"
+    local L, M = lee:load(FILES), mo:load(FILES)
+    lee:login()
+    mo:login()
+    lee:fire("TIME_PLAYED_MSG", 100000, 3000)
+    Mock.advance(30)
+    local toasts = {}
+    local orig = M.ShowToast
+    M.ShowToast = function(self, guid, icon, title, detail) toasts[#toasts + 1] = { title, detail } return orig(self, guid, icon, title, detail) end
+    -- Ding 22 after an hour, then 23 after another 2 hours.
+    Mock.advance(3600)
+    lee.level = 22
+    lee:fire("PLAYER_LEVEL_UP", 22)
+    Mock.advance(10)
+    Mock.advance(7200)
+    lee.level = 23
+    lee:fire("PLAYER_LEVEL_UP", 23)
+    Mock.advance(10)
+    local function ev(n) for _, e in ipairs(L:Me().events) do if e.k == "level" and e.d == n then return e end end end
+    check(ev(22) and ev(23), "levels 22 and 23 are both milestones")
+    check(ev(22) and ev(22).lt == nil, "first ding after installing: no level time (previous level unknown)")
+    check(ev(23) and ev(23).lt and math.abs(ev(23).lt - 7210) <= 2, ("level 23 took ~2h (%s s)"):format(tostring(ev(23) and ev(23).lt)))
+    check(ev(23) and ev(23).p and math.abs(ev(23).p - (100000 + 30 + 3600 + 10 + 7200)) <= 2,
+        ("total played at level 23 is right (%s)"):format(tostring(ev(23) and ev(23).p)))
+    check(ev(21) and ev(21).p == nil, "the level you were already on at install gets no made-up time")
+    local last = toasts[#toasts] or {}
+    check(last[1] == "Lee reached level 23" and last[2] and last[2]:find("Level took 2h 0m", 1, true) and last[2]:find("played", 1, true),
+        "guildie's pop-up shows the level time and total played: " .. tostring(last[2]))
+    check(L:EventText(ev(23)):find("level took 2h 0m", 1, true) ~= nil, "timeline entry shows both too")
+    check(L:EventPoints({ k = "level", d = 23 }) == 2 and L:EventPoints({ k = "level", d = 25 }) == 10, "in-between levels are worth 2 points, every 5th still 10")
+    M.ShowToast = orig
+    lee:logout()
+    mo:logout()
+end
+
 print("World map pings")
 do
     local hal = Mock.newClient({ name = "Hal", guid = "Player-1-00000011", class = "MAGE", level = 20 })
