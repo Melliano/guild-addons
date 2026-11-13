@@ -3,7 +3,6 @@
 local _, GJ = ...
 
 local ICON = "Interface\\Icons\\"
-local LEVEL_STEP = 5
 local MAX_LEVEL = (GetMaxPlayerLevel and GetMaxPlayerLevel()) or 60
 
 ---------------------------------------------------------------------------
@@ -125,7 +124,11 @@ GJ.EventKinds = {
     start   = { icon = "INV_Misc_Map_01", text = function(ev) return ("Began their Gooner Journey at level %d"):format(ev.l or 1) end },
     level   = { icon = "Spell_Holy_SurgeOfLight", text = function(ev)
         local s = ("Reached level %d"):format(ev.d or 0)
-        if ev.p then s = s .. (" |cff999999(%s played)|r"):format(GJ:FormatDuration(ev.p)) end
+        if ev.lt and ev.p then
+            s = s .. (" |cff999999(level took %s, %s played)|r"):format(GJ:FormatDuration(ev.lt), GJ:FormatDuration(ev.p))
+        elseif ev.p then
+            s = s .. (" |cff999999(%s played)|r"):format(GJ:FormatDuration(ev.p))
+        end
         return s
     end },
     death   = { icon = "INV_Misc_Bone_HumanSkull_01", color = "ffff5555", text = function(ev)
@@ -295,13 +298,36 @@ end
 ---------------------------------------------------------------------------
 local lastLevelUp = 0
 
-local function recordLevel(level)
+-- /played when you reached `level`, if we know it.
+local function playedAtLevel(level)
+    local s = stats()
+    if type(s.lvlp) == "table" and type(s.lvlp[level]) == "number" then return s.lvlp[level] end
+    for _, ev in ipairs(GJ:Me().events) do
+        if ev.k == "level" and ev.d == level and type(ev.p) == "number" then return ev.p end
+    end
+end
+
+-- Every level is a milestone (and a guild news pop-up), with total /played
+-- and how long that level took.
+-- dinged: true when you just levelled up. On login we only know your
+-- current level, not when you reached it, so no times are recorded then.
+local function recordLevel(level, dinged)
     GJ:RefreshMyInfo()
     GJ:SetStat("level", level)
-    if level % LEVEL_STEP == 0 or level == MAX_LEVEL then
-        if not GJ:HasEvent(GJ:Me(), "level", level) then
-            GJ:AddEvent("level", level, { p = GJ:CurrentPlayed() })
+    if not GJ:HasEvent(GJ:Me(), "level", level) then
+        local played = dinged and GJ:CurrentPlayed() or nil
+        local extra = { p = played }
+        local before = level > 1 and playedAtLevel(level - 1)
+        if played and before and played >= before then extra.lt = played - before end
+        if played then
+            -- Remember it now, so the next level's time works even if the
+            -- /played reply never comes.
+            local s = stats()
+            s.lvlp = s.lvlp or {}
+            s.lvlt = s.lvlt or {}
+            if not s.lvlp[level] then s.lvlp[level], s.lvlt[level] = played, GJ:Now() end
         end
+        GJ:AddEvent("level", level, extra)
     end
     if level >= MAX_LEVEL then GJ:Silly("maxLevel") end
 end
@@ -309,7 +335,7 @@ end
 GJ:On("PLAYER_LEVEL_UP", function(level)
     lastLevelUp = GetTime()
     pendingLevel = level
-    recordLevel(level)
+    recordLevel(level, true)
     requestPlayed()
 end)
 

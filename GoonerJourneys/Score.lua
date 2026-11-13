@@ -4,7 +4,7 @@ local _, GJ = ...
 
 local POINTS = {
     start   = 0,
-    level   = 10,  -- every 5 levels
+    level   = 10,  -- every 5th level; the levels in between are worth 2
     zone    = 5,
     dungeon = 15,
     raid    = 25,
@@ -28,6 +28,7 @@ GJ.RANKS = {
 
 function GJ:EventPoints(ev)
     if ev.dup then return 0 end
+    if ev.k == "level" and type(ev.d) == "number" and ev.d % 5 ~= 0 then return 2 end
     if ev.k == "item" then return ITEM_POINTS[ev.q or 0] or 0 end
     if ev.k == "silly" and SPECIAL[ev.d] then return SPECIAL[ev.d] end
     return POINTS[ev.k] or 0

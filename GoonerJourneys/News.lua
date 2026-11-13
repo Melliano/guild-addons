@@ -23,8 +23,13 @@ function GJ:NewsText(member, ev)
     local who = self:IsMe(member.guid) and "You" or (member.name or "Someone")
     local k = ev.k
     if k == "level" then
-        return ("%s reached level %d"):format(who, ev.d or 0),
-            ev.p and ("after " .. self:FormatDuration(ev.p) .. " played") or nil
+        local detail
+        if ev.lt and ev.p then
+            detail = ("Level took %s  -  %s played"):format(self:FormatDuration(ev.lt), self:FormatDuration(ev.p))
+        elseif ev.p then
+            detail = "after " .. self:FormatDuration(ev.p) .. " played"
+        end
+        return ("%s reached level %d"):format(who, ev.d or 0), detail
     elseif k == "death" then
         local where = ev.m and self:MapName(ev.m) or nil
         return ("%s died"):format(who),
