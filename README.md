@@ -22,7 +22,7 @@ A Muddy Boots-style journey tracker for the whole guild. Every goon with the add
 - **Weekly recap:** your first login each week shows last week's highlights: levels gained, deaths, MVP, death of the week, biggest jumper and more.
 - **Gooner Score and ranks:** points for every milestone, from *Gooner Initiate* up to *Grand Gooner*.
 - **GOONER ZONE DETECTED:** when a goon walks into the Lion's Pride Inn in Goldshire, the whole guild gets a flashing alert with a raid-warning sound. Visits are counted, with milestones up to *Lives In Goldshire Inn*.
-- **Hall of Fame:** one-off shout-outs that ship with a release. Each new entry pops up once for every goon, with a fanfare, the first time they log in on that version. All entries stay in **Guild → Hall of Fame**. The named goons stand on a stage as 3D character models in their own gear. The first entry is the *Hall of Thanes*.
+- **Hall of Fame:** one-off shout-outs that ship with a release. Each new entry pops up once for every goon, with a fanfare, the first time they log in on that version. All entries stay in **Guild → Hall of Fame**. The named goons stand on a stage as 3D character models in their own gear. The first entry is *The Deadmines*.
 - **Update nudge:** if a guildie has a newer version, you get told, and an "Update" button appears with the download link.
 
 ### Install

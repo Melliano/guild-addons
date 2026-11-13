@@ -17,15 +17,15 @@ local POPUP_FOR = 21 * 86400 -- don't pop up entries older than 3 weeks for new 
 
 GJ.HALL_OF_FAME = {
     {
-        id = "hall-of-thanes-2026-11",
+        id = "deadmines-2026-11",
         t = 1794225600, -- 9 Nov 2026
         kicker = "THIS WEEK'S HALL OF FAME",
-        title = "HALL OF THANES",
-        headline = "conquered the Hall of Thanes",
-        text = "Four goons walked into the Hall of Thanes and four goons walked out. "
+        title = "THE DEADMINES",
+        headline = "conquered the Deadmines",
+        text = "Five goons walked into the Deadmines and five goons walked out. "
             .. "Their names are now carved into the walls of the Gooner Hall forever.",
-        members = { "Seemour", "Orianna", "Rook", "Rasputin" },
-        icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+        members = { "Seemour", "Orianna", "Rook", "Rasputin", "Boush" },
+        icon = "Interface\\Icons\\INV_Pick_02",
     },
 }
 
@@ -53,7 +53,7 @@ local function joinNames(list)
     return table.concat(list, ", ", 1, #list - 1) .. " and " .. list[#list]
 end
 
--- "Seemour, Orianna, Rook and Rasputin" with class colours where known.
+-- "Seemour, Orianna, Rook, Rasputin and Boush" with class colours where known.
 function GJ:HallNames(entry)
     local out = {}
     for _, name in ipairs(entry.members or {}) do

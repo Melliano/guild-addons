@@ -601,13 +601,13 @@ check(not (A.peers.Bob and A.peers.Bob.whisper) and not (B.peers.Alice and B.pee
     "no whisper mode between Alice and Bob")
 
 print("Hall of Fame")
-check(B.db.private.hofSeen and B.db.private.hofSeen["hall-of-thanes-2026-11"], "Hall of Thanes popped up on login and was marked seen")
+check(B.db.private.hofSeen and B.db.private.hofSeen["deadmines-2026-11"], "The Deadmines entry popped up on login and was marked seen")
 local shown = {}
 local origHof = B.ShowHallOfFame
 B.ShowHallOfFame = function(self, entry) shown[#shown + 1] = entry and entry.id or "latest" return origHof(self, entry) end
 B.db.private.hofSeen = nil
 B:CheckHallOfFame()
-check(#shown == 1 and shown[1] == "hall-of-thanes-2026-11", "a new entry pops up once")
+check(#shown == 1 and shown[1] == "deadmines-2026-11", "a new entry pops up once")
 B:CheckHallOfFame()
 check(#shown == 1, "and not again")
 table.insert(B.HALL_OF_FAME, 1, { id = "test-new", t = B:Now(), title = "TEST", members = { "Alice" } })
@@ -622,6 +622,10 @@ check(#shown == 2, "/gooner fame setting off: no popup")
 B.db.settings.hallOfFame = true
 check(B:FindMemberByName("alice") == B:GetMember(alice.guid) and B:FindMemberByName("Nobody") == nil, "find goons by name, any case")
 check(B:HallNames({ members = { "Alice", "Orianna", "Rook" } }):find("Orianna and Rook$") ~= nil, "names read 'A, B and C'")
+local deadmines
+for _, e in ipairs(B.HALL_OF_FAME) do if e.id == "deadmines-2026-11" then deadmines = e end end
+check(deadmines and #deadmines.members == 5 and B:HallNames(deadmines):find("Rasputin and Boush$") ~= nil,
+    "The Deadmines entry names all five goons, Boush included")
 local okHof, errHof = pcall(function()
     B:ShowTab("halloffame")
     B:RefreshHallOfFame()
